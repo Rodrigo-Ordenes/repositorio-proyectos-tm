@@ -38,6 +38,8 @@ services:
         sync: false
       - key: PUCV_ADMIN_EMAILS
         sync: false
+      - key: PUCV_SOS
+        sync: false
       - key: PUCV_INCENTIVA_ADMINS
         sync: false
       - key: PUCV_INNOVA_ADMINS

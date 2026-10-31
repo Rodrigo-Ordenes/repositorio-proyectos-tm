@@ -1,6 +1,6 @@
 #!/bin/bash
 # Generated evidence sheet, alternatives, 3D model, pre-session questions with doubt grouping, tracking,
-# end-of-project report, projection mode, cohorts and the demo data loader.
+# end-of-project report, projection mode, cohorts and the emergency (SOS) code.
 set -u +B
 S="${PRUEBAS_TMP:-$(mktemp -d)}/mejoras"
 APP="$(cd "$(dirname "$0")/.." && pwd)"
@@ -101,10 +101,20 @@ check "lo archivado sigue en el catálogo" "$(req bea "$B/api/resources?project=
 for page in /ficha/1 /informe/innova /proyeccion/incentiva; do check "página $page" "$(curl -s -o /dev/null -w '%{http_code}' $B$page)" "200"; done
 kill $PID; wait $PID 2>/dev/null
 
-# Demo data loader on a fresh database
-rm -rf "$S/demo"; mkdir -p "$S/demo"
-APP_DB_PATH=$S/demo/repo.sqlite3 APP_UPLOAD_DIR=$S/demo/files PUCV_ADMIN_EMAILS=docente@mail.pucv.cl python3 server.py > "$S/demo.log" 2>&1 & PID=$!; sleep 1.2
-check "carga de datos de demostración" "$(python3 herramientas/datos_demo.py $B 2>&1)" "Datos de demostración cargados"
-check "la demostración trae ambos proyectos publicados" "$(sqlite3 $S/demo/repo.sqlite3 "select count(*) from submissions where status='published'")" "^2$"
+# Emergency (SOS) code: any domain, always admin, never stored in the repository
+rm -rf "$S/sos"; mkdir -p "$S/sos"
+SOSOUT=$(APP_DB_PATH=$S/sos/repo.sqlite3 python3 server.py codigo-sos Rescate@Gmail.com)
+SOSCODE=$(echo "$SOSOUT" | sed -n 's/^Código SOS para [^:]*: //p')
+check "el código SOS se genera" "$SOSCODE" '^[A-Z0-9]\{4\}-[A-Z0-9]\{4\}-[A-Z0-9]\{4\}-[A-Z0-9]\{4\}$'
+nocheck "el archivo guarda el hash, no el código" "$(cat $S/sos/sos.txt)" "$SOSCODE"
+APP_DB_PATH=$S/sos/repo.sqlite3 APP_UPLOAD_DIR=$S/sos/files APP_DEMO_AUTH=0 PUCV_ADMIN_EMAILS= python3 server.py > "$S/sos.log" 2>&1 & PID=$!; sleep 1.2
+sos() { curl -s -c "$S/sos.jar" "${J[@]}" -w ' [%{http_code}]' -d "{\"email\":\"$1\",\"code\":\"$2\"}" $B/auth/code; }
+check "SOS con código equivocado" "$(sos rescate@gmail.com AAAA-BBBB-CCCC-DDDD)" "\[400\]"
+check "SOS con otro correo" "$(sos otro@gmail.com "$SOSCODE")" "\[400\]"
+check "SOS correcto entra" "$(sos rescate@gmail.com "$SOSCODE")" "\[302\]"
+check "SOS entra como administración" "$(curl -s -b "$S/sos.jar" $B/api/me)" '"role": "admin"'
+check "el ingreso SOS queda registrado" "$(cat $S/sos.log)" "Ingreso con código SOS: rescate@gmail.com"
 kill $PID; wait $PID 2>/dev/null
-grep -i traceback -A6 "$S/server.log" "$S/demo.log" | head -20
+check "ningún archivo SOS en el repositorio" "$(git ls-files | grep -c 'sos.txt')" "^0$"
+
+grep -i traceback -A6 "$S/server.log" "$S/sos.log" | head -20

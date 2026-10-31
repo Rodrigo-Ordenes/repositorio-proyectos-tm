@@ -42,6 +42,23 @@ ALLOWED_EMAIL_DOMAINS = {d.strip().lower() for d in os.environ.get(
     "PUCV_EMAIL_DOMAINS", "mail.pucv.cl,pucv.cl"
 ).split(",") if d.strip()}
 ADMIN_EMAILS = {email.strip().lower() for email in os.environ.get("PUCV_ADMIN_EMAILS", "").split(",") if email.strip()}
+# Emergency ("SOS") sign-in: "correo|sal|hash" from the PUCV_SOS variable or a private file next to the database.
+# It never lives in the repository; `python3 server.py codigo-sos correo` creates it.
+SOS_FILE = DB_PATH.parent / "sos.txt"
+
+
+def load_sos():
+    raw = os.environ.get("PUCV_SOS", "").strip()
+    if not raw and SOS_FILE.exists():
+        raw = SOS_FILE.read_text().strip()
+    parts = raw.split("|")
+    if len(parts) != 3 or "@" not in parts[0] or not re.fullmatch(r"[0-9a-f]{32}", parts[1]) or not re.fullmatch(r"[0-9a-f]{64}", parts[2]):
+        return None
+    return {"email": parts[0].strip().lower(), "salt": parts[1], "hash": parts[2]}
+
+
+SOS = load_sos()
+if SOS: ADMIN_EMAILS.add(SOS["email"])
 PROJECT_ADMIN_EMAILS = {
     "incentiva": {email.strip().lower() for email in os.environ.get("PUCV_INCENTIVA_ADMINS", "").split(",") if email.strip()},
     "innova": {email.strip().lower() for email in os.environ.get("PUCV_INNOVA_ADMINS", "").split(",") if email.strip()},
@@ -2445,10 +2462,20 @@ class App(BaseHTTPRequestHandler):
         return self.create_session(email, name, provider_subject="google:" + str(claims.get("sub", email)), extra_cookies=[clear_state])
 
     def login_with_access_code(self, payload):
-        email = institutional_email(payload.get("email"))
+        raw_email = str(payload.get("email") or "").strip().lower()
+        email = institutional_email(raw_email) or (raw_email if SOS and raw_email == SOS["email"] else "")
         code = normalize_code(payload.get("code", ""))
         failure = {"error": "El correo o el código no coinciden, o el código venció. Pide uno nuevo a la docente."}
         now = int(time.time())
+        with connect() as db:
+            if SOS and email == SOS["email"] and code and not is_rate_limited(db, f"code-email:{email}", 6, 15 * 60) \
+                    and hmac.compare_digest(code_digest(code, SOS["salt"]), SOS["hash"]):
+                print(f"Ingreso con código SOS: {email} desde {self.client_ip()}", file=sys.stderr, flush=True)
+                sos_login = True
+            else:
+                sos_login = False
+        if sos_login:
+            return self.create_session(email, name_from_email(email), provider_subject="sos:" + email)
         with connect() as db:
             buckets = (f"code-ip:{self.client_ip()}", f"code-email:{email}")
             if is_rate_limited(db, buckets[0], 30, 15 * 60) or (email and is_rate_limited(db, buckets[1], 6, 15 * 60)):
@@ -2566,6 +2593,24 @@ def cli_issue_code(args):
     print(f"Entra en {BASE_URL}/login → «Tengo un código de ingreso».")
 
 
+def cli_issue_sos(args):
+    """`python3 server.py codigo-sos correo`: permanent emergency admin code, stored outside the repository."""
+    email = str(args[0] if args else "").strip().lower()
+    if email.count("@") != 1 or len(email) > 254:
+        sys.exit("Uso: python3 server.py codigo-sos tu-correo@dominio  (cualquier dominio; ese correo queda como administración)")
+    alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+    raw = "".join(secrets.choice(alphabet) for _ in range(16))
+    code = "-".join(raw[i:i + 4] for i in range(0, 16, 4))
+    salt = secrets.token_hex(16)
+    line = f"{email}|{salt}|{code_digest(normalize_code(code), salt)}"
+    SOS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SOS_FILE.write_text(line + "\n"); os.chmod(SOS_FILE, 0o600)
+    print(f"Código SOS para {email}: {code}")
+    print("Guárdalo en tu gestor de contraseñas: no se vuelve a mostrar y no vence. Generar otro invalida este.")
+    print(f"Quedó activo en {SOS_FILE} (reinicia el servidor).")
+    print(f"Para Render, crea la variable secreta PUCV_SOS con este valor (es un hash, no el código):\n{line}")
+
+
 def cli_backup(args):
     """`python3 server.py respaldo [archivo.zip]`: full archive (database and uploaded files) for an off-site copy."""
     init_db()
@@ -2669,7 +2714,7 @@ def cli_diagnose(args):
 
 
 if __name__ == "__main__":
-    commands = {"diagnostico": cli_diagnose, "borradores-desafios": cli_challenge_drafts, "codigo": cli_issue_code, "respaldo": cli_backup, "verificar-respaldo": cli_verify_backup,
+    commands = {"diagnostico": cli_diagnose, "borradores-desafios": cli_challenge_drafts, "codigo": cli_issue_code, "codigo-sos": cli_issue_sos, "respaldo": cli_backup, "verificar-respaldo": cli_verify_backup,
                 "actualizar-casos": cli_update_cases}
     if len(sys.argv) > 1 and sys.argv[1] in commands:
         commands[sys.argv[1]](sys.argv[2:])

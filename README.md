@@ -2,6 +2,10 @@
 
 Aplicación web única para mantener Incentiva e Innova bajo un solo dominio, con dos espacios diferenciados. Incluye catálogo con filtros, fichas con video insertado, entregas estructuradas, foro con pregunta guía y respuestas del equipo autor, preguntas de control, coevaluación entre pares, tiquetes de salida y encuestas KPSI/percepción con QR, vitrina de solo lectura, indicadores para los informes, herramientas de datos personales, respaldos y base SQLite. Solo usa Python estándar.
 
+## Código de emergencia (SOS)
+
+Por si falla Google, el correo o un código durante una clase o una grabación. `python3 server.py codigo-sos tu-correo` muestra el código **una sola vez** y guarda solo su hash en `data/sos.txt` (fuera de git). En Render, pega la línea que imprime en la variable secreta `PUCV_SOS`. Se entra en «Tengo un código de ingreso» con ese correo y ese código, siempre como administración; cada uso queda en el registro del servidor y los intentos fallidos se limitan igual que los demás códigos. Generar uno nuevo invalida el anterior.
+
 ## Funciones para la docente y los equipos
 
 - **Ficha de evidencia automática:** cada entrega genera su Ficha de Evidencia (Incentiva) o matriz diagnóstica (Innova) en `/ficha/<id>`, lista para imprimir o guardar en PDF. Subir la plantilla Word pasa a ser opcional.
@@ -20,6 +24,7 @@ Aplicación web única para mantener Incentiva e Innova bajo un solo dominio, co
 | `python3 server.py` | Iniciar el sitio |
 | `python3 server.py diagnostico` | Revisar la configuración antes de publicar (sale con error si falta algo crítico) |
 | `python3 server.py codigo correo@pucv.cl [incentiva\|innova] [días]` | Código personal de ingreso sin Google ni correo |
+| `python3 server.py codigo-sos tu-correo` | Código de emergencia (SOS) de administración: no vence, acepta cualquier dominio y nunca queda en el repositorio |
 | `python3 server.py borradores-desafios` | Reponer desafíos que falten como borradores (no duplica; el arranque ya crea los seis) |
 | `python3 server.py respaldo [archivo.zip]` / `verificar-respaldo archivo` | Respaldo completo y su verificación |
 | `python3 server.py actualizar-casos [carpeta]` | Regenerar `seeds/casos_innova.json` desde los .docx del curso |
@@ -53,14 +58,6 @@ El sitio sirve estos cinco archivos en `/materiales/…` (no tienen datos person
    - `python3 server.py codigo tu-correo@pucv.cl` para tu primer ingreso;
    - Los seis desafíos de Incentiva aparecen automáticamente como borradores para revisión docente.
 4. Para entrar con Google, sigue «Activar Google en 15 minutos» más abajo.
-
-## Mostrar el sitio a compañeros (demo con datos ficticios)
-
-```sh
-bash herramientas/demo_publica.sh
-```
-
-Crea una copia aparte con datos inventados de ambos proyectos (`herramientas/datos_demo.py`), la publica en la red local y en una dirección https temporal (localhost.run, gratis y sin cuenta) e imprime los códigos de ingreso de docente y estudiantes. La dirección cambia cada vez que el túnel se reconecta; para una dirección estable, desplegar en Render. Nunca apuntar `datos_demo.py` a la base real.
 
 ## Probar localmente
 

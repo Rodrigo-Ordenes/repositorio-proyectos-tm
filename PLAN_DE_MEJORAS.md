@@ -310,5 +310,5 @@ Pruebas: `pruebas/mejoras.sh` (46 comprobaciones) se suma a la batería de `prue
 
 ### Lo que sigue dependiendo de terceros
 
-- Dirección pública estable: desplegar en Render (requiere cuenta). Mientras tanto, `herramientas/demo_publica.sh` publica una demo temporal con datos ficticios.
+- Dirección pública estable: desplegar en Render (requiere cuenta).
 - Ingreso con Google institucional: requiere credenciales OAuth de la PUCV; los códigos personales y de curso funcionan sin ellas.
