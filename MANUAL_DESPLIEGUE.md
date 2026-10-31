@@ -54,10 +54,18 @@ Cada `git push` a `main` vuelve a desplegar el sitio. La base de datos y los arc
 
 ## 4. Dar acceso a estudiantes
 
-Una persona solo entra si comprueba su identidad. Hay tres maneras:
+La forma principal es **un código por curso o por fase**, sin Google ni códigos individuales:
+
+- **Código del curso (recomendado):** en **Acceso de estudiantes**, la docente elige asignatura y paralelo, pone un nombre (por ejemplo «Semestre 2026-2» o «Fase 1»), la vigencia y, si quiere, la **lista del curso** (correos pegados desde la nómina). Comparte el código en clase o el enlace `/?unirse=CÓDIGO` en Aula Virtual. Cada estudiante entra en «Tengo un código de ingreso» con su correo institucional y ese código, y queda inscrito en su paralelo.
+  - **Con lista:** solo entran esos correos. Es lo recomendado para que nadie ajeno al curso entre aunque se filtre el código.
+  - **Sin lista:** entra cualquier correo `@mail.pucv.cl` o `@pucv.cl` que conozca el código.
+  - **Límite:** el sitio no puede comprobar que el correo sea de quien lo escribe (eso solo lo hace Google o el enlace por correo). Las cuentas docentes y de administración nunca entran con el código del curso.
+  - **Al terminar la fase:** se pulsa «Desactivar» o se deja vencer; abrir una cohorte nueva los desactiva todos.
+
+Alternativas:
 
 - **Con Google** (cuando esté activo): la docente crea en **Acceso de estudiantes** una invitación con asignatura, paralelo, vigencia y máximo de usos, y pega el enlace `/?unirse=CÓDIGO` en Aula Virtual. Quien lo abre entra con Google PUCV y queda inscrito en el paralelo sin aprobación.
-- **Sin Google**: en **Códigos personales de ingreso** pega la lista de correos del curso (uno por línea), elige la asignatura y la vigencia, y descarga el CSV con el código de cada persona. Envía cada código en privado, por ejemplo por mensaje de Aula Virtual. Ese código ya da acceso a la asignatura.
+- **Código personal**, para casos puntuales: en **Códigos personales de ingreso** pega los correos (uno por línea), elige la asignatura y la vigencia, y descarga el CSV con el código de cada persona. Envía cada código en privado, por ejemplo por mensaje de Aula Virtual. Ese código ya da acceso a la asignatura.
 - **Solicitud**: quien entra sin invitación ve «Solicitar acceso», y la docente aprueba en **Solicitudes de acceso**.
 
 El dominio del correo no da permisos por sí solo. `@mail.pucv.cl` y `@pucv.cl` pueden entrar, pero solo ve el panel docente quien está en `PUCV_*_ADMINS` o en **Equipo docente**.
@@ -110,6 +118,8 @@ Con eso se activan el enlace de ingreso por correo y los avisos de acceso aproba
 |---|---|---|
 | El sitio tarda o muestra error 502 justo después de un push | Se está desplegando | Esperar 1 o 2 minutos |
 | «El correo o el código no coinciden» con el SOS | `PUCV_SOS` mal copiada o con espacios | Pegar de nuevo la línea completa y reiniciar |
+| «Tu correo no está en la lista de este curso» | Correo mal escrito o ausente de la nómina | Revisar el correo; si falta, crear el código de nuevo con la lista corregida |
+| El video de Drive aparece como privado | El archivo no está compartido | En Drive: Compartir → «Cualquier persona con el enlace» |
 | La sesión se cierra al recargar | `APP_BASE_URL` no coincide con la dirección real | Corregirla, con `https://` y sin barra final |
 | Las entregas desaparecieron | Plan gratuito o sin disco | Usar Starter con disco y restaurar el último respaldo |
 | No aparece el botón de Google | Faltan `GOOGLE_CLIENT_ID` o `GOOGLE_CLIENT_SECRET` | Paso 5, o seguir con códigos |

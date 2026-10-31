@@ -95,6 +95,7 @@ Cada suite levanta el servidor en el puerto 8766 con una base temporal que se bo
 | Vía | Qué se necesita | Cuándo usarla |
 |---|---|---|
 | **Continuar con Google PUCV** (recomendada) | Un cliente OAuth creado por el equipo en su propio proyecto de Google Cloud (gratis, ~15 min). Variables `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`. | Ingreso diario. Verifica que la cuenta sea Google Workspace de `mail.pucv.cl`/`pucv.cl` (claim `hd`) y trae el nombre real. |
+| **Código del curso + correo** (principal sin Google) | Nada externo. La docente crea en el panel un código por semestre o fase, con paralelo, vigencia y lista opcional de correos del curso. | Ingreso de todo el paralelo con un solo código. No verifica el buzón; con lista, solo entran los correos del curso. Las cuentas docentes no pueden usarlo. |
 | **Código de ingreso personal** | Nada externo. La docente los genera en el panel (pega correos → descarga CSV) o por consola: `python3 server.py codigo correo@pucv.cl [incentiva\|innova] [días]`. | Respaldo si Google falla o la universidad bloquea la app; primer ingreso de la administración. |
 | **Enlace por correo** (opcional) | Remitente SMTP (Gmail con contraseña de aplicación, Brevo, etc.). | Si se quiere ofrecer además del ingreso con Google. |
 

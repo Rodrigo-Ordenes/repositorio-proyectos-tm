@@ -97,6 +97,31 @@ check "indicadores de la nueva cohorte" "$(req prof "$B/api/admin/indicators?pro
 check "indicadores de la cohorte archivada" "$(req prof "$B/api/admin/indicators?project=incentiva&cohort=2026-2")" '"Entregas publicadas", "value": 1'
 check "lo archivado sigue en el catálogo" "$(req bea "$B/api/resources?project=incentiva")" "Con alternativas"
 
+# Course (or phase) code + institutional address, without Google or a personal code
+cc() { curl -s -c "$S/$1.cc" "${J[@]}" -w ' [%{http_code}]' -d "{\"email\":\"$1@$3\",\"code\":\"$2\"}" $B/auth/code; }
+OC=$(req prof -d '{"project_id":"incentiva","section":"Oftalmología","label":"Semestre","days":30}' $B/api/admin/join-codes | val "d['code']")
+check "estudiante nueva entra con código del curso" "$(cc nueva "$OC" mail.pucv.cl)" "\[302\]"
+check "queda en la asignatura y su paralelo" "$(curl -s -b "$S/nueva.cc" $B/api/me)" '"active_projects": \["incentiva"\].*Oftalmolog'
+check "correo no institucional con código del curso" "$(cc ajena "$OC" gmail.com)" "\[400\]"
+check "docente no entra con código del curso" "$(cc prof "$OC" mail.pucv.cl)" "cuentas docentes.*\[403\]"
+check "administración no entra con código del curso" "$(cc admin "$OC" mail.pucv.cl)" "\[403\]"
+RC=$(req inn -d '{"project_id":"innova","days":30,"roster":"Eva@mail.pucv.cl; x@gmail.com\ngus@mail.pucv.cl"}' $B/api/admin/join-codes)
+check "código con lista del curso" "$RC" '"roster_size": 2'
+RC=$(echo "$RC" | val "d['code']")
+check "correo de la lista entra" "$(cc eva "$RC" mail.pucv.cl)" "\[302\]"
+check "correo fuera de la lista no entra" "$(cc fede "$RC" mail.pucv.cl)" "no está en la lista.*\[403\]"
+check "unirse con sesión respeta la lista" "$(req bea -d "{\"code\":\"$RC\"}" $B/api/join)" "\[400\]"
+check "la lista muestra cuántos correos" "$(req inn $B/api/admin/join-codes)" '"roster_size": 2'
+nocheck "la lista no expone los correos" "$(req inn $B/api/admin/join-codes)" "gus@mail.pucv.cl"
+list=$(req prof $B/api/admin/join-codes)
+check "los usos se cuentan" "$list" '"uses": 1'
+req prof -d "{\"id\":$(echo "$list" | val "[c['id'] for c in d if c['label']=='Semestre'][0]")}" $B/api/admin/join-codes/disable > /dev/null
+check "código desactivado ya no permite entrar" "$(cc otra "$OC" mail.pucv.cl)" "\[400\]"
+
+# Drive sharing check (only drive.google.com is ever asked; other links are not fetched)
+check "revisión de video sin sesión" "$(curl -s -w ' [%{http_code}]' "$B/api/video-check?url=x")" "\[401\]"
+check "revisión de video ajeno a Drive" "$(req ana "$B/api/video-check?url=https%3A%2F%2Fexample.com%2Ffile%2Fd%2F1234567890abc")" '"status": "unknown"'
+
 # Pages
 for page in /ficha/1 /informe/innova /proyeccion/incentiva; do check "página $page" "$(curl -s -o /dev/null -w '%{http_code}' $B$page)" "200"; done
 kill $PID; wait $PID 2>/dev/null

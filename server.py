@@ -21,6 +21,7 @@ import tempfile
 import threading
 import time
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -537,7 +538,7 @@ def init_db():
             ("source_submission_id", "INTEGER"), ("file_storage_key", "TEXT NOT NULL DEFAULT ''"),
             ("file_filename", "TEXT NOT NULL DEFAULT ''"), ("edited_at", "TEXT"),
             ("guide_question", "TEXT NOT NULL DEFAULT ''"), ("quiz", "TEXT NOT NULL DEFAULT '[]'")))
-        add_missing_columns(db, "join_codes", (("section", "TEXT NOT NULL DEFAULT ''"),))
+        add_missing_columns(db, "join_codes", (("section", "TEXT NOT NULL DEFAULT ''"), ("roster", "TEXT NOT NULL DEFAULT ''")))
         add_missing_columns(db, "submissions", (("cohort", "TEXT NOT NULL DEFAULT ''"),))
         db.execute("""CREATE UNIQUE INDEX IF NOT EXISTS submissions_open_team_per_cohort ON submissions(project_id, cohort, lower(trim(section)),
           lower(trim(team_name))) WHERE team_name <> '' AND status <> 'rejected'""")
@@ -663,6 +664,27 @@ def video_embed_url(url) -> str:
         return f"https://www.youtube-nocookie.com/embed/{video_id}?rel=0&cc_load_policy=1"
     drive = re.fullmatch(r"/file/d/([A-Za-z0-9_-]{10,})(?:/(?:view|preview|edit))?/?", parsed.path) if host == "drive.google.com" else None
     return f"https://drive.google.com/file/d/{drive.group(1)}/preview" if drive else ""
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs): return None
+
+
+def drive_sharing_status(url) -> str:
+    """'public', 'private', 'missing' or 'unknown' for a Drive file, asked anonymously as a classmate would see it."""
+    parsed = urllib.parse.urlparse(str(url or ""))
+    found = re.fullmatch(r"/file/d/([A-Za-z0-9_-]{10,})(?:/(?:view|preview|edit))?/?", parsed.path)
+    if (parsed.hostname or "").lower() != "drive.google.com" or not found: return "unknown"
+    request = urllib.request.Request(f"https://drive.google.com/file/d/{found.group(1)}/view", headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.build_opener(_NoRedirect).open(request, timeout=6) as response:
+            return "public" if response.status == 200 else "unknown"
+    except urllib.error.HTTPError as error:
+        if error.code in (301, 302, 303, 307) and "accounts.google.com" in error.headers.get("Location", ""): return "private"
+        if error.code == 404: return "missing"
+        return "unknown"
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return "unknown"
 
 
 def parse_quiz(text):
@@ -1032,6 +1054,37 @@ def normalize_code(value) -> str:
     return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())[:32]
 
 
+def join_code_usable(row, now=None) -> bool:
+    now = now or int(time.time())
+    return bool(row and row["active"] and row["expires_at"] > now and (row["max_uses"] is None or row["uses"] < row["max_uses"]))
+
+
+def roster_emails(raw) -> list:
+    """Institutional addresses from a pasted class list (one per line, commas or semicolons), deduplicated."""
+    found = []
+    for item in re.split(r"[\s,;]+", str(raw or "")):
+        email = institutional_email(item.strip("<>()\"'"))
+        if email and email not in found: found.append(email)
+    return found
+
+
+def apply_join_code(db, user_id, row):
+    """Activate the membership a course code grants, record its paralelo and count the use."""
+    db.execute("""INSERT INTO project_memberships(user_id,project_id,status,reviewed_at,reviewed_by,section,cohort)
+      VALUES(?,?,'active',CURRENT_TIMESTAMP,?,?,?) ON CONFLICT(user_id,project_id) DO UPDATE SET
+      status='active',reviewed_at=CURRENT_TIMESTAMP,reviewed_by=excluded.reviewed_by,cohort=excluded.cohort,
+      section=CASE WHEN excluded.section<>'' THEN excluded.section ELSE project_memberships.section END""",
+      (user_id, row["project_id"], row["created_by"], row["section"], current_cohort(db)))
+    db.execute("UPDATE join_codes SET uses=uses+1 WHERE id=?", (row["id"],))
+
+
+def is_staff_email(db, email) -> bool:
+    """Teaching and admin accounts never enter with a shared course code: whoever knows it could type their address."""
+    if email in ADMIN_EMAILS or any(email in emails for emails in PROJECT_ADMIN_EMAILS.values()): return True
+    if db.execute("SELECT 1 FROM staff_roles WHERE email=?", (email,)).fetchone(): return True
+    return bool(db.execute("SELECT 1 FROM users WHERE email=? AND role IN ('admin','editor')", (email,)).fetchone())
+
+
 def format_code(code: str) -> str:
     return "-".join(code[i:i + 4] for i in range(0, len(code), 4))
 
@@ -1273,6 +1326,14 @@ class App(BaseHTTPRequestHandler):
             return self.json({"user": user, "demo": DEMO_AUTH, "email_ready": email_ready, "google_ready": google_ready(),
                               "active_projects": active, "pending_projects": pending,"managed_projects":managed,
                               "my_sections": sections, "project_config": config, "reader_projects": self.reader_projects(user), "cohort": cohort_now})
+        if path == "/api/video-check":
+            user = self.require_user()
+            if not user: return
+            url = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("url", [""])[0][:500]
+            with connect() as db:
+                if is_rate_limited(db, f"video-check:{user['id']}", 30, 15 * 60): return self.json({"status": "unknown"})
+                record_rate_event(db, f"video-check:{user['id']}")
+            return self.json({"status": drive_sharing_status(url)})
         if path == "/api/my-submissions":
             user = self.require_user()
             if not user: return
@@ -1289,11 +1350,11 @@ class App(BaseHTTPRequestHandler):
             if not managed: return self.json({"error": "No tienes permiso para gestionar códigos."}, 403)
             placeholders = ",".join("?" for _ in managed)
             with connect() as db:
-                rows = db.execute("SELECT id,code,project_id,label,section,expires_at,max_uses,uses,active FROM join_codes WHERE project_id IN ("
+                rows = db.execute("SELECT id,code,project_id,label,section,expires_at,max_uses,uses,active,roster FROM join_codes WHERE project_id IN ("
                                   + placeholders + ") ORDER BY id DESC LIMIT 50", managed).fetchall()
             now = int(time.time())
-            return self.json([{**dict(r), "code": format_code(r["code"]), "valid": bool(r["active"] and r["expires_at"] > now
-                               and (r["max_uses"] is None or r["uses"] < r["max_uses"]))} for r in rows])
+            return self.json([{**{k: r[k] for k in r.keys() if k != "roster"}, "code": format_code(r["code"]), "valid": join_code_usable(r, now),
+                               "roster_size": len(r["roster"].split())} for r in rows])
         if path == "/api/admin/members":
             user = self.require_user()
             if not user: return
@@ -1794,7 +1855,7 @@ class App(BaseHTTPRequestHandler):
                 if is_rate_limited(db, bucket, 8, 15 * 60):
                     return self.json({"error": "Demasiados intentos. Espera unos minutos e inténtalo de nuevo."}, 429)
                 row = db.execute("SELECT * FROM join_codes WHERE code=?", (code,)).fetchone() if code else None
-                if not row or not row["active"] or row["expires_at"] <= int(time.time()) or (row["max_uses"] is not None and row["uses"] >= row["max_uses"]):
+                if not join_code_usable(row) or (row["roster"] and user["email"].lower() not in row["roster"].split()):
                     record_rate_event(db, bucket)
                     return self.json(failure, 400)
                 project = row["project_id"]
@@ -1807,12 +1868,7 @@ class App(BaseHTTPRequestHandler):
                 if member and member["revoked"]:
                     return self.json({"error": "Tu acceso a esta asignatura fue retirado. Contacta a la docente."}, 403)
                 # A code created for one paralelo also records it, so deliveries and the catalog can be filtered by section.
-                db.execute("""INSERT INTO project_memberships(user_id,project_id,status,reviewed_at,reviewed_by,section,cohort)
-                  VALUES(?,?,'active',CURRENT_TIMESTAMP,?,?,?) ON CONFLICT(user_id,project_id) DO UPDATE SET
-                  status='active',reviewed_at=CURRENT_TIMESTAMP,reviewed_by=excluded.reviewed_by,cohort=excluded.cohort,
-                  section=CASE WHEN excluded.section<>'' THEN excluded.section ELSE project_memberships.section END""",
-                  (user["id"], project, row["created_by"], row["section"], current_cohort(db)))
-                db.execute("UPDATE join_codes SET uses=uses+1 WHERE id=?", (row["id"],))
+                apply_join_code(db, user["id"], row)
             return self.json({"ok": True, "project_id": project, "message": f"Listo: ya tienes acceso a {PROJECTS[project]['name']}."})
         if path == "/api/admin/join-codes":
             user = self.require_user()
@@ -1828,17 +1884,22 @@ class App(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 return self.json({"error": "Revisa la duración y el número de usos."}, 400)
             if max_uses is not None and not 1 <= max_uses <= 1000: return self.json({"error": "El máximo de usos debe estar entre 1 y 1000."}, 400)
+            roster = roster_emails(payload.get("roster", ""))
+            if str(payload.get("roster", "")).strip() and not roster:
+                return self.json({"error": "La lista no tiene correos institucionales válidos."}, 400)
+            if len(roster) > 1000: return self.json({"error": "La lista admite hasta 1000 correos."}, 400)
             now = int(time.time())
             with connect() as db:
                 for _ in range(5):
                     code = new_code()
                     try:
-                        db.execute("""INSERT INTO join_codes(code,project_id,label,section,created_by,created_at,expires_at,max_uses,cohort)
-                          VALUES(?,?,?,?,?,?,?,?,?)""", (code, project, label, section, user["id"], now, now + days * 86400, max_uses, current_cohort(db)))
+                        db.execute("""INSERT INTO join_codes(code,project_id,label,section,created_by,created_at,expires_at,max_uses,cohort,roster)
+                          VALUES(?,?,?,?,?,?,?,?,?,?)""", (code, project, label, section, user["id"], now, now + days * 86400, max_uses, current_cohort(db),
+                                                         "\n".join(roster)))
                         break
                     except sqlite3.IntegrityError:
                         continue
-            return self.json({"ok": True, "code": format_code(code)}, 201)
+            return self.json({"ok": True, "code": format_code(code), "roster_size": len(roster)}, 201)
         if path == "/api/admin/join-codes/disable":
             user = self.require_user()
             if not user: return
@@ -2478,15 +2539,30 @@ class App(BaseHTTPRequestHandler):
             return self.create_session(email, name_from_email(email), provider_subject="sos:" + email)
         with connect() as db:
             buckets = (f"code-ip:{self.client_ip()}", f"code-email:{email}")
-            if is_rate_limited(db, buckets[0], 30, 15 * 60) or (email and is_rate_limited(db, buckets[1], 6, 15 * 60)):
+            if is_rate_limited(db, buckets[0], 120, 15 * 60) or (email and is_rate_limited(db, buckets[1], 6, 15 * 60)):
                 return self.json({"error": "Demasiados intentos. Espera 15 minutos e inténtalo de nuevo."}, 429)
             rows = db.execute("SELECT id,code_hash,salt,project_id,created_by FROM access_codes WHERE email=? AND revoked_at IS NULL AND expires_at>?",
                               (email, now)).fetchall() if email and code else []
             match = next((r for r in rows if hmac.compare_digest(code_digest(code, r["salt"]), r["code_hash"])), None)
-            if not match:
+            course = None
+            if not match and email and code and not (SOS and email == SOS["email"]):
+                # Course (or phase) code shared in class: the address only needs the institutional format.
+                course = db.execute("SELECT * FROM join_codes WHERE code=?", (code,)).fetchone()
+                if not join_code_usable(course, now): course = None
+                elif course["roster"] and email not in course["roster"].split():
+                    for bucket in buckets: record_rate_event(db, bucket)
+                    return self.json({"error": "Tu correo no está en la lista de este curso. Revisa que esté bien escrito o pide ayuda a la docente."}, 403)
+                elif is_staff_email(db, email):
+                    return self.json({"error": "Las cuentas docentes no entran con el código del curso. Usa Google o tu código personal."}, 403)
+                elif db.execute("""SELECT 1 FROM project_memberships m JOIN users u ON u.id=m.user_id
+                                   WHERE u.email=? AND m.project_id=? AND m.revoked=1""", (email, course["project_id"])).fetchone():
+                    return self.json({"error": "Tu acceso a esta asignatura fue retirado. Contacta a la docente."}, 403)
+            if not match and not course:
                 for bucket in buckets: record_rate_event(db, bucket)
                 return self.json(failure, 400)
-            db.execute("UPDATE access_codes SET last_used_at=? WHERE id=?", (now, match["id"]))
+            if match: db.execute("UPDATE access_codes SET last_used_at=? WHERE id=?", (now, match["id"]))
+        if course:
+            return self.create_session(email, name_from_email(email), provider_subject="curso:" + email, join_row=course)
         return self.create_session(email, name_from_email(email), provider_subject="code:" + email,
                                    grant_project=match["project_id"], granted_by=match["created_by"])
 
@@ -2546,7 +2622,7 @@ class App(BaseHTTPRequestHandler):
           <p class='helper'>Si no solicitaste este correo, puedes cerrar esta página.</p></section></main></body></html>"""
         return self.send_bytes(page.encode())
 
-    def create_session(self, email, name, provider_subject, extra_cookies=(), grant_project=None, granted_by=None):
+    def create_session(self, email, name, provider_subject, extra_cookies=(), grant_project=None, granted_by=None, join_row=None):
         with connect() as db:
             is_project_admin=any(email.lower() in emails for emails in PROJECT_ADMIN_EMAILS.values())
             role="admin" if email.lower() in ADMIN_EMAILS else ("editor" if is_project_admin else "student")
@@ -2565,6 +2641,7 @@ class App(BaseHTTPRequestHandler):
                   VALUES(?,?,'active',CURRENT_TIMESTAMP,?,?) ON CONFLICT(user_id,project_id) DO UPDATE SET
                   status='active',revoked=0,reviewed_at=CURRENT_TIMESTAMP,reviewed_by=excluded.reviewed_by,cohort=excluded.cohort""",
                   (user["id"], grant_project, granted_by, current_cohort(db)))
+            if join_row: apply_join_code(db, user["id"], join_row)
             raw = secrets.token_urlsafe(36)
             db.execute("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
                        (token_hash(raw), user["id"], int(time.time()) + SESSION_SECONDS))

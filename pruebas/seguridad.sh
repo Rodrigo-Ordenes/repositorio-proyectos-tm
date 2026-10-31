@@ -77,8 +77,8 @@ check "retirada: comentarios ocultos" "$(req ana "$B/api/projects/incentiva/reso
 check "retirada: la docente sí los ve" "$(req prof "$B/api/projects/incentiva/resources/$SLUG/comments")" "Comentario docente"
 check "retirada: el equipo autor conserva su ficha" "$(req carla $B/api/submissions/$SID/evidence)" "%PDF-1.4 ficha"
 
-# 5. Spoofed X-Forwarded-For no longer resets the per-IP limit
-for i in $(seq 1 30); do curl -s -o /dev/null "${J[@]}" -H "X-Forwarded-For: 10.0.0.$i, 200.1.1.1" -d "{\"email\":\"x$i@mail.pucv.cl\",\"code\":\"AAAA-BBBB\"}" $B/auth/code; done
+# 5. Spoofed X-Forwarded-For no longer resets the per-IP limit (120 failures per 15 min: a whole class shares one IP)
+for i in $(seq 1 120); do curl -s -o /dev/null "${J[@]}" -H "X-Forwarded-For: 10.0.$((i/200)).$((i%200)), 200.1.1.1" -d "{\"email\":\"x$i@mail.pucv.cl\",\"code\":\"AAAA-BBBB\"}" $B/auth/code; done
 check "límite por IP con cabecera falsificada" "$(curl -s -o /dev/null -w '%{http_code}' "${J[@]}" -H 'X-Forwarded-For: 9.9.9.9, 200.1.1.1' -d '{"email":"y@mail.pucv.cl","code":"AAAA-BBBB"}' $B/auth/code)" "429"
 
 # 6. Malformed input answers 400 instead of dropping the connection
