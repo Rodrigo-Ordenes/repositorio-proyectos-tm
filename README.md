@@ -53,6 +53,25 @@ APP_DEMO_AUTH=1 PUCV_ADMIN_EMAILS=docente@mail.pucv.cl python3 server.py
 
 Abre `http://localhost:8000` e ingresa con `docente@mail.pucv.cl` para revisar el panel docente y los dos cursos. La demostración permite revisar los recorridos y persistencia, pero acepta una dirección escrita y **no verifica su buzón ni identidad**. Está limitada al equipo local y no sirve como autenticación real; nunca activar `APP_DEMO_AUTH=1` en el sitio publicado.
 
+### Probar las funcionalidades a mano
+
+Con el modo demostración, entra desde «Modo de demostración local» con el correo de `PUCV_ADMIN_EMAILS` (docente) o con cualquier otro `@mail.pucv.cl` (estudiante). Para probar los códigos como los usará el curso:
+
+```sh
+python3 server.py codigo estudiante@mail.pucv.cl incentiva 30   # código personal: entra con «Tengo un código de ingreso»
+```
+
+Los códigos del curso (los que se proyectan en clase) se crean en el panel docente → «Acceso de estudiantes».
+
+### Pruebas automáticas
+
+```sh
+bash pruebas/ejecutar.sh            # todas las suites (unas 220 verificaciones)
+bash pruebas/ejecutar.sh seguridad  # una sola suite
+```
+
+Cada suite levanta el servidor en el puerto 8766 con una base temporal que se borra al terminar: no toca tus datos. Necesita `python3`, `curl` y `sqlite3`. Las suites son `acceso`, `entregas_y_materiales`, `foro_tiquetes_vitrina`, `encuestas_indicadores_datos`, `seguridad` y `paginas_publicas`. GitHub Actions las ejecuta en cada cambio que se sube (`.github/workflows/pruebas.yml`).
+
 ## Acceso: tres vías, ninguna depende de TI PUCV
 
 | Vía | Qué se necesita | Cuándo usarla |
