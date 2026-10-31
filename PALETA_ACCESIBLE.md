@@ -15,7 +15,7 @@ Evaluación de contraste de tokens y propuesta visual del repositorio. Revisión
 | **Simulación de daltonismo** (Machado, Oliveira y Fernandes, 2009) | Modelo fisiológico de protanopia, deuteranopia y tritanopia. Las guías recomiendan variar la luminosidad, no solo el tono, y revisar en escala de grises. | Se revisó la separación entre los acentos y entre estados. La prueba detecta combinaciones que requieren texto o iconografía además del color; no certifica usabilidad cromática. |
 | **Preferencias del sistema** (`prefers-color-scheme`, `prefers-contrast`, `forced-colors`) | Respetar el modo oscuro, el pedido de más contraste y los temas de alto contraste de Windows. | Están implementadas las tres. |
 
-La interfaz usa marfil cálido y verde hoja como base. Incentiva se marca con verde bosque; Innova con arcilla suave, que hace contraste con la identidad general y evoca trabajo de laboratorio. Nombre, número y texto acompañan siempre los acentos para que el color no cargue solo con la distinción. No son valores corporativos ni sustituyen el logotipo PUCV. El verde y la arcilla son decisiones de interfaz para los cursos, no colores oficiales de marca. [Normas gráficas PUCV 2023](https://pucv.cl/uuaa/site/docs/20240822/20240822181659/normas_graficas_2023.pdf).
+La interfaz usa marfil cálido y verde hoja como base. Incentiva se marca con verde bosque e Innova con ciruela. La versión anterior usaba arcilla para Innova, pero verde y arcilla forman el par rojo-verde que se confunde con protanopia y deuteranopia (ΔE 3–18); el ciruela conserva el tono sobrio y separa los proyectos con ΔE ≥ 21 bajo los tres tipos de daltonismo. Nombre, número y texto acompañan siempre los acentos para que el color no cargue solo con la distinción. No son valores corporativos ni sustituyen el logotipo PUCV. El verde y el ciruela son decisiones de interfaz para los cursos, no colores oficiales de marca. [Normas gráficas PUCV 2023](https://pucv.cl/uuaa/site/docs/20240822/20240822181659/normas_graficas_2023.pdf).
 
 ## 2. Diagnóstico de la versión anterior
 
@@ -41,7 +41,8 @@ La documentación anterior reportaba una auditoría renderizada en 11 vistas, pe
 | `--control` | Bordes de campos | `#697469` | `#89968b` |
 | `--focus` | Anillo de foco | `#92551e` | `#e0ad6a` |
 | `--forest` / `--forest-soft` | Incentiva · verde hoja | `#315d42` / `#e6ede3` | `#c4dac1` / `#26342a` |
-| `--clay` / `--clay-soft` | Innova · arcilla | `#8b4c38` / `#f1e7df` | `#efc9b8` / `#392a25` |
+| `--plum` / `--plum-soft` | Innova · ciruela | `#6f3f78` / `#efe6f2` | `#eac6f0` / `#33263a` |
+| `--series-1` / `--series-2` | Gráficos del informe (azul y naranja) | `#2a78d6` / `#eb6834` | `#3987e5` / `#d95926` |
 | `--success` / `--danger` / `--warning` | Estados | `#2d603d` / `#933c32` / `#6c531b` | `#add5ad` / `#f0b4a9` / `#e6cd8c` |
 
 Además de la paleta:
@@ -56,17 +57,18 @@ Además de la paleta:
 
 **Verificación ejecutada en esta revisión:** `python3 herramientas/verificar_paleta.py` reportó cero fallas en los pares de tokens incluidos en `herramientas/paleta.json` (modo claro y oscuro). Este chequeo sí es reproducible. No demuestra por sí solo que cada página, estado, control, video incrustado o texto dinámico cumpla WCAG.
 
-La auditoría de página `herramientas/auditoria_contraste.js` se debe ejecutar en el navegador sobre las vistas reales de estudiante, docente, privacidad y formularios, en ambos temas. El archivo registra solo la página que está abierta; no automatiza las diez vistas mencionadas por la documentación previa. El resultado por vista queda pendiente.
+**Auditoría por vistas (31 de octubre de 2026):** `herramientas/auditoria_vistas.js` se pega en la consola del navegador con sesión de administración. Recorre 12 vistas (portada, Incentiva con su guía, entrega, foro, tiquetes, Innova, panel docente, informe, proyección, kit, ayuda y privacidad) en claro y en oscuro, y revisa el texto, el texto y las barras de los gráficos y los bordes de los campos. Resultado sobre la copia de demostración: **0 fallas WCAG 2.2 AA y 0 bordes bajo 3:1 en las 24 combinaciones**. Las vistas con datos dependen de lo publicado: conviene repetirla con los datos reales del curso. `herramientas/auditoria_contraste.js` revisa solo la página abierta.
 
 **Separación de colores** (ΔE CIE76; desde 20 se distinguen con claridad):
 
 | Par | Visión normal | Protanopia | Deuteranopia | Tritanopia |
 |---|---|---|---|---|
-| Incentiva / Innova (claro) | 49 | 5 | 18 | 58 |
-| Incentiva / Innova (oscuro) | 23 | 3 | 6 | 29 |
+| Incentiva / Innova (claro, ciruela) | 63 | 43 | 31 | 40 |
+| Incentiva / Innova (oscuro, ciruela) | 41 | 30 | 24 | 21 |
+| Antes, con arcilla (claro / oscuro, protanopia) | 49 / 23 | 5 / 3 | 18 / 6 | 58 / 29 |
 | Publicada / Devuelta (claro) | 77 | **9** | 22 | 90 |
 
-Algunos tonos de proyecto pueden acercarse bajo simulaciones de deficiencia cromática, sobre todo protanopia. Por eso las asignaturas también se identifican con su nombre y número («01 · Incentiva», «02 · Innova»), y los estados llevan ícono (✓, ↺, ◷) y texto además del color.
+Con el ciruela, los proyectos ya no se confunden bajo simulación; los estados verde/rojo sí siguen cerca con protanopia. Por eso las asignaturas también se identifican con su nombre y número («01 · Incentiva», «02 · Innova»), y los estados llevan ícono (✓, ↺, ◷) y texto además del color.
 
 ## 5. Cómo verificarla de nuevo
 
@@ -84,3 +86,7 @@ Las herramientas manuales equivalentes son el selector de color de Chrome DevToo
 - Disability World. [1.4.11 Non-text Contrast](https://www.disabilityworld.org/toolkit/standards/wcag/1-4-11-non-text-contrast/).
 - Myndex. [APCA introduction](https://github.com/Myndex/apca-introduction), y University of Bath. [The times they are a-changin' (for how we measure colour contrast)](https://blogs.bath.ac.uk/digital-content-and-development/2024/11/08/the-times-they-are-a-changin-for-how-we-measure-colour-contrast/).
 - Machado, G. M., Oliveira, M. M. y Fernandes, L. (2009). A physiologically-based model for simulation of color vision deficiency. *IEEE Transactions on Visualization and Computer Graphics, 15*(6), 1291–1298. Implementaciones: [colorspace (R)](https://colorspace.R-Forge.R-project.org/articles/color_vision_deficiency.html) y [colour (Python)](https://colour.readthedocs.io/en/v0.4.1/_modules/colour/blindness/machado2009.html).
+
+## Colores de los gráficos
+
+El informe final usa un par azul/naranja propio para los datos, separado de los acentos de interfaz (que no tienen la saturación ni el contraste que necesita una barra). Se validó con el validador de la guía de visualización sobre las superficies del sitio: banda de luminosidad, croma mínimo, separación con daltonismo (ΔE ≥ 24) y contraste ≥ 3:1, en claro y en oscuro. Cada gráfico escribe los valores y ofrece «Ver los datos en tabla».

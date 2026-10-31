@@ -2,6 +2,17 @@
 
 Aplicación web única para mantener Incentiva e Innova bajo un solo dominio, con dos espacios diferenciados. Incluye catálogo con filtros, fichas con video insertado, entregas estructuradas, foro con pregunta guía y respuestas del equipo autor, preguntas de control, coevaluación entre pares, tiquetes de salida y encuestas KPSI/percepción con QR, vitrina de solo lectura, indicadores para los informes, herramientas de datos personales, respaldos y base SQLite. Solo usa Python estándar.
 
+## Funciones para la docente y los equipos
+
+- **Ficha de evidencia automática:** cada entrega genera su Ficha de Evidencia (Incentiva) o matriz diagnóstica (Innova) en `/ficha/<id>`, lista para imprimir o guardar en PDF. Subir la plantilla Word pasa a ser opcional.
+- **Comparación de alternativas (Incentiva):** hasta 3 ideas puntuadas de 1 a 3 en los 7 criterios de la postulación, con la elegida marcada; aparece en la ficha y en la revisión.
+- **Modelo 3D (Innova):** el equipo sube un STL y la ficha lo muestra en un visor que se gira con el mouse o las flechas.
+- **Preguntas previas:** además del tiquete de salida, preguntas antes de la sesión (aula invertida). La docente categoriza cada respuesta y el panel calcula la duda dominante y las palabras frecuentes; el CSV incluye las categorías.
+- **Seguimiento por equipo:** por paralelo, quién está ligado a una entrega, el estado de cada equipo y quién falta.
+- **Informe final:** `/informe/<proyecto>` con indicadores, entregas, KPSI entrada/salida, preguntas de control, coevaluación y dudas frecuentes, con gráficos y tabla de datos; se imprime en PDF.
+- **Modo proyección:** `/proyeccion/<proyecto>` muestra los trabajos publicados uno tras otro, por paralelo, con temporizador de 5 minutos y un QR para coevaluar en vivo.
+- **Cohortes:** cada semestre es una cohorte (`APP_COHORT`, por defecto 2026-2). Abrir una nueva no borra nada: lo anterior queda archivado y filtrable, y los indicadores se calculan por cohorte.
+
 ## Comandos de consola
 
 | Comando | Para qué |
@@ -42,6 +53,14 @@ El sitio sirve estos cinco archivos en `/materiales/…` (no tienen datos person
    - `python3 server.py codigo tu-correo@pucv.cl` para tu primer ingreso;
    - Los seis desafíos de Incentiva aparecen automáticamente como borradores para revisión docente.
 4. Para entrar con Google, sigue «Activar Google en 15 minutos» más abajo.
+
+## Mostrar el sitio a compañeros (demo con datos ficticios)
+
+```sh
+bash herramientas/demo_publica.sh
+```
+
+Crea una copia aparte con datos inventados de ambos proyectos (`herramientas/datos_demo.py`), la publica en la red local y en una dirección https temporal (localhost.run, gratis y sin cuenta) e imprime los códigos de ingreso de docente y estudiantes. La dirección cambia cada vez que el túnel se reconecta; para una dirección estable, desplegar en Render. Nunca apuntar `datos_demo.py` a la base real.
 
 ## Probar localmente
 
@@ -171,7 +190,7 @@ La carpeta del proyecto tiene material del curso con datos personales (respuesta
 
 Los tokens de color se verifican con los cálculos WCAG 2.2 y APCA; todavía se debe auditar cada vista real para afirmar conformidad completa. Incluye modo oscuro automático o manual (botón ◐), `prefers-contrast` y temas de alto contraste de Windows. El detalle, la investigación y las herramientas para volver a medir están en [PALETA_ACCESIBLE.md](PALETA_ACCESIBLE.md).
 
-La paleta usa marfil cálido y verde bosque como base, un acento de hoja para Incentiva y arcilla suave para Innova. Los títulos serif y las líneas finas dan un tono editorial relacionado con salud y territorio sin imitar el logotipo oficial. En pantalla grande las dos entradas aparecen juntas; en celular se apilan. El buscador y las tarjetas pertenecen a un solo proyecto por vez.
+La paleta usa marfil cálido y verde bosque como base, un acento de hoja para Incentiva y ciruela para Innova (elegido para que ambos se distingan también con daltonismo). Los títulos serif y las líneas finas dan un tono editorial relacionado con salud y territorio sin imitar el logotipo oficial. En pantalla grande las dos entradas aparecen juntas; en celular se apilan. El buscador y las tarjetas pertenecen a un solo proyecto por vez.
 
 ## Despliegue
 

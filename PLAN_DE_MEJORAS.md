@@ -290,3 +290,25 @@ La propuesta lista indicadores que «la plataforma entrega sin esfuerzo»: entre
 ## Revisión cruzada posterior
 
 La revisión por roles, el cruce con las fuentes del curso, las mejoras aplicadas y las validaciones pendientes están en [REVISION_CRUZADA.md](REVISION_CRUZADA.md). La suite más reciente pasó 225 verificaciones; las limitaciones de privacidad, proveedores externos y accesibilidad por vista se describen allí.
+
+## Mejoras implementadas (31 de octubre de 2026)
+
+| # | Mejora | Proyecto | Dónde |
+|---|---|---|---|
+| 1 | Ficha de evidencia generada desde el formulario (imprimible en PDF) | Ambos | `/ficha/<id>` |
+| 2 | Modo proyección para la sesión del 18 de noviembre: videos en secuencia, temporizador y QR de coevaluación | Ambos | `/proyeccion/<proyecto>` |
+| 3 | Tabla de alternativas: hasta 3 ideas puntuadas 1–3 en los 7 criterios de la postulación | Incentiva | Formulario de entrega |
+| 4 | Agrupación de dudas de los tiquetes: categorías, duda dominante, palabras frecuentes y CSV con categorías | Ambos | Panel docente |
+| 5 | Visor 3D de prototipos (STL, hasta 8 MB) | Innova | Ficha y detalle del recurso |
+| 6 | Preguntas previas a la sesión (aula invertida), como tipo de tiquete | Innova (y Incentiva) | Panel docente |
+| 7 | Seguimiento por equipo y paralelo: quién está ligado a una entrega y quién falta | Ambos | Panel docente |
+| 8 | Informe final con gráficos accesibles y tabla de datos | Ambos | `/informe/<proyecto>` |
+| 9 | Paleta ajustada para daltonismo: Innova pasa de arcilla a ciruela; serie azul/naranja validada para gráficos | Ambos | `PALETA_ACCESIBLE.md` |
+| 10 | Cohortes: cerrar 2026 y abrir 2027 sin borrar; indicadores, catálogo y equipos por cohorte | Ambos | Panel docente (`APP_COHORT`) |
+
+Pruebas: `pruebas/mejoras.sh` (46 comprobaciones) se suma a la batería de `pruebas/ejecutar.sh`. Auditoría de contraste por vistas: `herramientas/auditoria_vistas.js` (12 vistas × 2 temas, 0 fallas en la demo).
+
+### Lo que sigue dependiendo de terceros
+
+- Dirección pública estable: desplegar en Render (requiere cuenta). Mientras tanto, `herramientas/demo_publica.sh` publica una demo temporal con datos ficticios.
+- Ingreso con Google institucional: requiere credenciales OAuth de la PUCV; los códigos personales y de curso funcionan sin ellas.

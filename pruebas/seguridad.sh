@@ -30,7 +30,7 @@ INSERT INTO exit_ticket_respondents VALUES (1,3); INSERT INTO exit_ticket_answer
 db.execute("PRAGMA foreign_keys=OFF"); db.execute("INSERT INTO exit_ticket_answers VALUES ('z',99,'[1]','2026-10-30')"); db.commit()
 EOF
 start
-check "tablas anónimas sin rowid" "$(sqlite3 $S/repo.sqlite3 "select count(*) from sqlite_master where sql like '%WITHOUT ROWID%'")" "^4$"
+check "tablas anónimas sin rowid" "$(sqlite3 $S/repo.sqlite3 "select count(*) from sqlite_master where sql like '%WITHOUT ROWID%' and name in ('exit_ticket_answers','exit_ticket_respondents','survey_answers','survey_respondents')")" "^4$"
 check "migración conserva respuestas" "$(sqlite3 $S/repo.sqlite3 'select count(*) from exit_ticket_answers')" "^2$"
 check "orden físico ya no es el de inserción" "$(sqlite3 $S/repo.sqlite3 'select group_concat(user_id) from exit_ticket_respondents')" "^3,7$"
 check "secure_delete activo" "$(python3 -c "import sys;sys.path.insert(0,'$APP');import server;print(server.connect().execute('PRAGMA secure_delete').fetchone()[0])")" "^1$"

@@ -22,12 +22,22 @@ Todo se hace desde **Revisión** (arriba a la derecha) → panel docente. Arriba
 - Si el sitio tiene correo configurado, el equipo recibe un aviso en ambos casos.
 - **Comentarios del foro:** los de estudiantes se revisan antes de publicarse. Las respuestas del equipo autor llegan marcadas, y lo que tú escribes se publica directo.
 
+## Durante el proyecto
+
+- **Preguntas previas (aula invertida):** en «Tiquetes de salida y preguntas previas», elige el tipo «Preguntas previas» y comparte el QR o el enlace antes de la clase.
+- **Agrupar dudas:** en «Ver respuestas» escribe una categoría junto a cada respuesta (se autocompletan las que ya usaste). Arriba aparecen la duda dominante y las palabras más frecuentes; empieza la clase por ahí.
+- **Seguimiento por equipo:** muestra por paralelo cuántas personas están ligadas a una entrega y qué equipos faltan. Quien aparezca «sin entrega asociada» puede integrar un equipo que no escribió su correo.
+- **Sesión de proyección (18 de noviembre):** en «Informe final y modo proyección», pulsa «Modo proyección». Usa «Siguiente» o las flechas del teclado, el temporizador de 5 minutos y el QR para que el curso coevalúe cada trabajo en el momento.
+
 ## Informes
 
-- **Indicadores:** elige la asignatura y descarga el CSV. Incluye entregas (a tiempo, si se configuró el plazo), subtítulos, declaración de IA, foro, preguntas de control, coevaluación, tiquetes y encuestas.
+- **Informe final:** en «Informe final y modo proyección», elige asignatura y cohorte y pulsa «Abrir informe»: indicadores y gráficos listos para imprimir o guardar en PDF.
+- **Indicadores:** elige la asignatura y la cohorte, y descarga el CSV. Incluye entregas (a tiempo, si se configuró el plazo), subtítulos, declaración de IA, foro, preguntas de control, coevaluación, tiquetes y encuestas.
 - **Coevaluación:** promedios por ficha en el panel; el CSV completo trae quién evaluó.
 
 ## Personas y datos (solo administración global)
+
+- **Nueva cohorte:** al empezar el semestre siguiente, en «Cohortes» escribe el nombre (por ejemplo «2027-1») y pulsa «Abrir cohorte». Nada se borra; los códigos del curso se desactivan para que crees los nuevos.
 
 - **Equipo docente:** asigna o quita docentes por asignatura; el cambio rige de inmediato.
 - **Retirar acceso:** se hace en «Integrantes con acceso». Para devolverlo, genera un código personal para esa persona.

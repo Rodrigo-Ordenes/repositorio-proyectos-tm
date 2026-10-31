@@ -77,7 +77,7 @@ PROJECTS = {
         "name": "Innova en el Aula",
         "course": "Fundamentos de Diagnóstico Molecular",
         "short": "Casos, prototipos y diagnóstico molecular",
-        "accent": "clay",
+        "accent": "plum",
         "kind": "Cápsula + prototipo 3D + matriz diagnóstica",
         "description": "Explica cómo una alteración molecular se relaciona con un caso y su diagnóstico.",
     },
@@ -198,6 +198,20 @@ INNOVA_CASES = [
     ("innova", "xpc-reparacion-adn", "XPC: cuando el daño permanece en el ADN", "Caso clínico-molecular", "Compara la reparación del daño inducido por radiación UV en células control y del paciente.", ["XPC", "Reparación del ADN", "Daño UV"], "Caso_Clinico_4_*.docx"),
     ("innova", "pah-estructura-funcion", "PAH: proteína presente, función alterada", "Caso clínico-molecular", "La enzima se sintetiza, pero una variante cambia su función. Integra estructura, actividad y consecuencias metabólicas.", ["PAH", "Estructura-función", "Enzimología"], "Caso_Clinico_5_*.docx"),
 ]
+# Criteria the Incentiva project form uses to choose among alternative solutions (scored 1 to 3).
+ALTERNATIVE_CRITERIA = ["Pertinencia territorial", "Utilidad", "Accesibilidad", "Factibilidad", "Ética", "Fundamento científico", "Sostenibilidad"]
+# Flipped-classroom questions answered before a session (Innova's plan: arrive with the doubt already identified).
+PRE_SESSION_QUESTIONS = {
+    "innova": ["¿Qué parte del caso o del mecanismo molecular todavía no entiendes?",
+               "¿Qué técnica crees que serviría para confirmar el diagnóstico y por qué?",
+               "Escribe una pregunta que quieras resolver en la sesión."],
+    "incentiva": ["¿Qué parte del desafío o de la comunidad todavía no tienes clara?",
+                  "¿Qué evidencia crees que necesita tu equipo y dónde la buscarías?",
+                  "Escribe una pregunta que quieras resolver en la sesión."],
+}
+DEFAULT_COHORT = os.environ.get("APP_COHORT", "2026-2").strip() or "2026-2"
+STOPWORDS = set("""a al algo ante antes como con contra cual cuando de del desde donde durante el ella ellas ellos en entre era es esa ese eso esta este esto estos fue ha hay la las le les lo los mas me mi mis muy ni no nos o otra otro para pero poco por porque que quien se sea ser si sin sobre su sus tambien te tiene todo tu un una uno unos y ya yo hoy creo sesion
+cual cuales como mas menos mucho puede pueden seria serian hacer hace tener tengo""".split())
 UPLOAD_SUFFIXES = (".pdf", ".docx", ".pptx", ".xlsx", ".odt", ".txt")
 BACKUP_DIR = Path(os.environ.get("APP_BACKUP_DIR", DB_PATH.parent / "backups"))
 BACKUP_KEEP = max(1, int(os.environ.get("APP_BACKUP_KEEP", "14")))
@@ -467,6 +481,17 @@ def init_db():
           closes_at INTEGER NOT NULL,
           active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1))
         );
+        CREATE TABLE IF NOT EXISTS settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+        -- Teacher-assigned categories for exit-ticket answers (keyed by the answer's random id, never by person).
+        CREATE TABLE IF NOT EXISTS exit_ticket_tags (
+          answer_id TEXT NOT NULL,
+          question INTEGER NOT NULL,
+          tag TEXT NOT NULL,
+          PRIMARY KEY(answer_id, question)
+        ) WITHOUT ROWID;
         CREATE INDEX IF NOT EXISTS access_codes_email ON access_codes(email, revoked_at, expires_at);
         CREATE INDEX IF NOT EXISTS rate_events_bucket ON rate_events(bucket, created_at);
         """)
@@ -478,16 +503,27 @@ def init_db():
             ("member_emails", "TEXT NOT NULL DEFAULT '[]'"), ("has_subtitles", "INTEGER NOT NULL DEFAULT 0"),
             ("showcase_consent", "INTEGER NOT NULL DEFAULT 0")))
         add_missing_columns(db, "comments", (("parent_id", "INTEGER"), ("badge", "TEXT NOT NULL DEFAULT ''")))
+        add_missing_columns(db, "submissions", (("cohort", "TEXT NOT NULL DEFAULT ''"), ("alternatives", "TEXT NOT NULL DEFAULT '{}'"),
+                                                ("model_storage_key", "TEXT NOT NULL DEFAULT ''"), ("model_filename", "TEXT NOT NULL DEFAULT ''")))
+        add_missing_columns(db, "exit_tickets", (("kind", "TEXT NOT NULL DEFAULT 'salida'"), ("cohort", "TEXT NOT NULL DEFAULT ''")))
+        for table in ("surveys", "project_memberships", "join_codes"):
+            add_missing_columns(db, table, (("cohort", "TEXT NOT NULL DEFAULT ''"),))
+        # Rows created before cohorts existed belong to the first cohort.
+        first = cohorts(db)[0]["name"]
+        for table in ("submissions", "exit_tickets", "surveys", "project_memberships", "join_codes"):
+            db.execute(f"UPDATE {table} SET cohort=? WHERE cohort=''", (first,))
         # A returned (rejected) delivery must not block the team from sending its corrected version.
         db.execute("DROP INDEX IF EXISTS submissions_one_final_per_team")
-        # Teams in separate course sections may use the same label (for example, "Grupo 1").
+        # Teams in separate course sections, or in another cohort, may use the same label (for example, "Grupo 1").
         db.execute("DROP INDEX IF EXISTS submissions_one_open_per_team")
-        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS submissions_one_open_per_team ON submissions(project_id, lower(trim(section)), lower(trim(team_name))) WHERE team_name <> '' AND status <> 'rejected'")
         add_missing_columns(db, "resources", (
             ("source_submission_id", "INTEGER"), ("file_storage_key", "TEXT NOT NULL DEFAULT ''"),
             ("file_filename", "TEXT NOT NULL DEFAULT ''"), ("edited_at", "TEXT"),
             ("guide_question", "TEXT NOT NULL DEFAULT ''"), ("quiz", "TEXT NOT NULL DEFAULT '[]'")))
         add_missing_columns(db, "join_codes", (("section", "TEXT NOT NULL DEFAULT ''"),))
+        add_missing_columns(db, "submissions", (("cohort", "TEXT NOT NULL DEFAULT ''"),))
+        db.execute("""CREATE UNIQUE INDEX IF NOT EXISTS submissions_open_team_per_cohort ON submissions(project_id, cohort, lower(trim(section)),
+          lower(trim(team_name))) WHERE team_name <> '' AND status <> 'rejected'""")
         add_missing_columns(db, "project_memberships", (("section", "TEXT NOT NULL DEFAULT ''"), ("revoked", "INTEGER NOT NULL DEFAULT 0")))
         for slug, p in PROJECTS.items():
             db.execute("""INSERT INTO projects(id,name,course,description,accent)
@@ -678,50 +714,96 @@ def survey_results(items, scale, rows):
     return results
 
 
-def project_indicators(db, project):
-    """Figures the proposal promises for the Incentiva and Innova reports, computed from what the platform already records."""
+def project_indicators(db, project, cohort=None):
+    """Figures the proposal promises for the Incentiva and Innova reports, computed from what the platform already records.
+    Everything is limited to one cohort: by its column where the record has one, by its time window otherwise."""
+    cohort = cohort or current_cohort(db)
+    since, until = cohort_window(db, cohort)
     one = lambda sql, *args: db.execute(sql, args).fetchone()[0]
     deadline = os.environ.get(f"PUCV_{project.upper()}_DEADLINE", "").strip()
-    open_subs = "FROM submissions WHERE project_id=? AND status<>'rejected'"
-    teams = one("SELECT COUNT(DISTINCT lower(trim(team_name))) " + open_subs, project)
+    subs = "FROM submissions WHERE project_id=? AND cohort=?"
+    open_subs = subs + " AND status<>'rejected'"
+    teams = one("SELECT COUNT(DISTINCT lower(trim(section))||'/'||lower(trim(team_name))) " + open_subs, project, cohort)
     pct = lambda part, whole: f"{round(100 * part / whole)}%" if whole else "—"
-    subtitled = one("SELECT COUNT(*) " + open_subs + " AND has_subtitles=1", project)
-    with_ai = one("SELECT COUNT(*) " + open_subs + " AND trim(ai_declaration)<>''", project)
+    subtitled = one("SELECT COUNT(*) " + open_subs + " AND has_subtitles=1", project, cohort)
+    with_ai = one("SELECT COUNT(*) " + open_subs + " AND trim(ai_declaration)<>''", project, cohort)
     rows = [
-        ("Participación", "Estudiantes con acceso", one("SELECT COUNT(*) FROM project_memberships WHERE project_id=? AND status='active'", project)),
+        ("Participación", "Estudiantes con acceso", one("SELECT COUNT(*) FROM project_memberships WHERE project_id=? AND status='active' AND cohort=?", project, cohort)),
         ("Entregas", "Equipos con entrega", teams),
-        ("Entregas", "Entregas publicadas", one("SELECT COUNT(*) FROM submissions WHERE project_id=? AND status='published'", project)),
-        ("Entregas", "Entregas en revisión", one("SELECT COUNT(*) FROM submissions WHERE project_id=? AND status='review'", project)),
-        ("Entregas", "Entregas devueltas para corregir", one("SELECT COUNT(*) FROM submissions WHERE project_id=? AND status='rejected'", project)),
+        ("Entregas", "Entregas publicadas", one("SELECT COUNT(*) " + subs + " AND status='published'", project, cohort)),
+        ("Entregas", "Entregas en revisión", one("SELECT COUNT(*) " + subs + " AND status='review'", project, cohort)),
+        ("Entregas", "Entregas devueltas para corregir", one("SELECT COUNT(*) " + subs + " AND status='rejected'", project, cohort)),
     ]
     for section in PROJECT_SECTIONS[project]:
-        rows.append(("Entregas", f"Equipos con entrega · {section}", one("SELECT COUNT(DISTINCT lower(trim(team_name))) " + open_subs + " AND section=?", project, section)))
+        rows.append(("Entregas", f"Equipos con entrega · {section}", one("SELECT COUNT(DISTINCT lower(trim(team_name))) " + open_subs + " AND section=?", project, cohort, section)))
     if deadline:
-        on_time = one("SELECT COUNT(DISTINCT lower(trim(team_name))) " + open_subs + " AND date(created_at)<=date(?)", project, deadline)
+        on_time = one("SELECT COUNT(DISTINCT lower(trim(section))||'/'||lower(trim(team_name))) " + open_subs + " AND date(created_at)<=date(?)", project, cohort, deadline)
         rows.append(("Entregas", f"Equipos que entregaron hasta el {deadline}", f"{on_time} ({pct(on_time, teams)})"))
-    total = one("SELECT COUNT(*) " + open_subs, project)
-    published_comments = "FROM comments c JOIN resources r ON r.id=c.resource_id WHERE r.project_id=? AND c.status='published'"
-    quiz_rows = db.execute("SELECT q.score,r.quiz FROM quiz_attempts q JOIN resources r ON r.id=q.resource_id WHERE r.project_id=?", (project,)).fetchall()
+    total = one("SELECT COUNT(*) " + open_subs, project, cohort)
+    with_alternatives = one("SELECT COUNT(*) " + open_subs + " AND alternatives LIKE '%\"items\"%'", project, cohort)
+    published_comments = "FROM comments c JOIN resources r ON r.id=c.resource_id WHERE r.project_id=? AND c.status='published' AND c.created_at>=? AND c.created_at<?"
+    quiz_rows = db.execute("""SELECT q.score,r.quiz FROM quiz_attempts q JOIN resources r ON r.id=q.resource_id
+      WHERE r.project_id=? AND q.created_at>=? AND q.created_at<?""", (project, since, until)).fetchall()
     quiz_share = sum(r["score"] / max(1, len(json.loads(r["quiz"]))) for r in quiz_rows) / len(quiz_rows) if quiz_rows else None
-    peer = [json.loads(r[0]) for r in db.execute("SELECT p.scores FROM peer_reviews p JOIN resources r ON r.id=p.resource_id WHERE r.project_id=?", (project,))]
+    peer = [json.loads(r[0]) for r in db.execute("""SELECT p.scores FROM peer_reviews p JOIN resources r ON r.id=p.resource_id
+      WHERE r.project_id=? AND p.created_at>=? AND p.created_at<?""", (project, since, until))]
     peer_overall = peer_summary(PEER_RUBRIC[project], peer)["overall"] if peer else None
     rows += [
         ("Calidad y uso ético", "Videos con subtítulos declarados", f"{subtitled} de {total} ({pct(subtitled, total)})"),
         ("Calidad y uso ético", "Entregas con declaración de IA", f"{with_ai} de {total} ({pct(with_ai, total)})"),
-        ("Calidad y uso ético", "Equipos que autorizan la vitrina", one("SELECT COUNT(*) " + open_subs + " AND showcase_consent=1", project)),
-        ("Foro", "Comentarios publicados", one("SELECT COUNT(*) " + published_comments, project)),
-        ("Foro", "Respuestas del equipo autor", one("SELECT COUNT(*) " + published_comments + " AND c.badge='equipo'", project)),
-        ("Foro", "Fichas con respuesta del equipo autor", one("SELECT COUNT(DISTINCT c.resource_id) " + published_comments + " AND c.badge='equipo'", project)),
+        ("Calidad y uso ético", "Equipos que autorizan la vitrina", one("SELECT COUNT(*) " + open_subs + " AND showcase_consent=1", project, cohort)),
+    ]
+    if project == "incentiva":
+        rows.append(("Calidad y uso ético", "Entregas que comparan alternativas", f"{with_alternatives} de {total} ({pct(with_alternatives, total)})"))
+    else:
+        rows.append(("Calidad y uso ético", "Entregas con modelo 3D", one("SELECT COUNT(*) " + open_subs + " AND model_storage_key<>''", project, cohort)))
+    rows += [
+        ("Foro", "Comentarios publicados", one("SELECT COUNT(*) " + published_comments, project, since, until)),
+        ("Foro", "Respuestas del equipo autor", one("SELECT COUNT(*) " + published_comments + " AND c.badge='equipo'", project, since, until)),
+        ("Foro", "Fichas con respuesta del equipo autor", one("SELECT COUNT(DISTINCT c.resource_id) " + published_comments + " AND c.badge='equipo'", project, since, until)),
         ("Preguntas de control", "Personas que respondieron (intentos)", len(quiz_rows)),
         ("Preguntas de control", "Promedio de respuestas correctas", f"{round(100 * quiz_share)}%" if quiz_share is not None else "—"),
         ("Coevaluación", "Evaluaciones entre pares", len(peer)),
         ("Coevaluación", "Promedio general (1 a 4)", peer_overall if peer_overall is not None else "—"),
-        ("Tiquetes de salida", "Tiquetes aplicados", one("SELECT COUNT(*) FROM exit_tickets WHERE project_id=?", project)),
-        ("Tiquetes de salida", "Respuestas recibidas", one("SELECT COUNT(*) FROM exit_ticket_answers a JOIN exit_tickets t ON t.id=a.ticket_id WHERE t.project_id=?", project)),
-        ("Encuestas", "Encuestas aplicadas (KPSI y percepción)", one("SELECT COUNT(*) FROM surveys WHERE project_id=?", project)),
-        ("Encuestas", "Respuestas recibidas", one("SELECT COUNT(*) FROM survey_answers a JOIN surveys s ON s.id=a.survey_id WHERE s.project_id=?", project)),
+        ("Tiquetes", "Tiquetes de salida aplicados", one("SELECT COUNT(*) FROM exit_tickets WHERE project_id=? AND cohort=? AND kind='salida'", project, cohort)),
+        ("Tiquetes", "Preguntas previas aplicadas", one("SELECT COUNT(*) FROM exit_tickets WHERE project_id=? AND cohort=? AND kind='previa'", project, cohort)),
+        ("Tiquetes", "Respuestas recibidas", one("SELECT COUNT(*) FROM exit_ticket_answers a JOIN exit_tickets t ON t.id=a.ticket_id WHERE t.project_id=? AND t.cohort=?", project, cohort)),
+        ("Encuestas", "Encuestas aplicadas (KPSI y percepción)", one("SELECT COUNT(*) FROM surveys WHERE project_id=? AND cohort=?", project, cohort)),
+        ("Encuestas", "Respuestas recibidas", one("SELECT COUNT(*) FROM survey_answers a JOIN surveys s ON s.id=a.survey_id WHERE s.project_id=? AND s.cohort=?", project, cohort)),
     ]
     return [{"group": g, "label": label, "value": value} for g, label, value in rows]
+
+
+def project_report(db, project, cohort):
+    """Data behind the printable end-of-project report: indicators plus the series the charts draw."""
+    since, until = cohort_window(db, cohort)
+    statuses = {r["status"]: r["n"] for r in db.execute("SELECT status,COUNT(*) n FROM submissions WHERE project_id=? AND cohort=? GROUP BY status", (project, cohort))}
+    by_section = [{"section": r["section"] or "Sin paralelo", "teams": r["n"]} for r in db.execute(
+        """SELECT section,COUNT(DISTINCT lower(trim(team_name))) n FROM submissions WHERE project_id=? AND cohort=? AND status<>'rejected'
+           GROUP BY section ORDER BY section""", (project, cohort))]
+    kpsi = []
+    exit_survey = db.execute("SELECT * FROM surveys WHERE project_id=? AND cohort=? AND kind='kpsi' AND moment='salida' ORDER BY id DESC LIMIT 1", (project, cohort)).fetchone()
+    entry_survey = db.execute("SELECT * FROM surveys WHERE project_id=? AND cohort=? AND kind='kpsi' AND moment='entrada' ORDER BY id DESC LIMIT 1", (project, cohort)).fetchone()
+    if exit_survey and entry_survey:
+        rows_for = lambda sid: [json.loads(r[0]) for r in db.execute("SELECT answer_values FROM survey_answers WHERE survey_id=?", (sid,))]
+        before = {r["text"]: r for r in survey_results(json.loads(entry_survey["items"]), json.loads(entry_survey["scale"]), rows_for(entry_survey["id"]))}
+        for r in survey_results(json.loads(exit_survey["items"]), json.loads(exit_survey["scale"]), rows_for(exit_survey["id"])):
+            b = before.get(r["text"])
+            kpsi.append({"text": r["text"], "dimension": r["dimension"], "before": b["mean"] if b else None, "after": r["mean"]})
+    quiz = []
+    for resource in db.execute("SELECT id,title,quiz FROM resources WHERE project_id=? AND quiz<>'[]'", (project,)).fetchall():
+        attempts = [json.loads(a[0]) for a in db.execute("SELECT answers FROM quiz_attempts WHERE resource_id=? AND created_at>=? AND created_at<?", (resource["id"], since, until))]
+        if attempts:
+            stats = quiz_stats(json.loads(resource["quiz"]), attempts)
+            shares = [q["correct_share"] for q in stats["questions"] if q["correct_share"] is not None]
+            quiz.append({"title": resource["title"], "respondents": stats["respondents"], "correct_share": round(sum(shares) / len(shares), 2) if shares else None})
+    peer = [json.loads(r[0]) for r in db.execute("""SELECT p.scores FROM peer_reviews p JOIN resources r ON r.id=p.resource_id
+      WHERE r.project_id=? AND p.created_at>=? AND p.created_at<?""", (project, since, until))]
+    tags = db.execute("""SELECT g.tag,COUNT(*) n FROM exit_ticket_tags g JOIN exit_ticket_answers a ON a.id=g.answer_id
+      JOIN exit_tickets t ON t.id=a.ticket_id WHERE t.project_id=? AND t.cohort=? GROUP BY g.tag ORDER BY n DESC LIMIT 8""", (project, cohort)).fetchall()
+    return {"project": project, "name": PROJECTS[project]["name"], "cohort": cohort, "indicators": project_indicators(db, project, cohort),
+            "statuses": statuses, "by_section": by_section, "kpsi": kpsi, "quiz": quiz,
+            "peer": peer_summary(PEER_RUBRIC[project], peer) if peer else None, "doubts": [dict(r) for r in tags]}
 
 
 def anonymize_user(db, user_id):
@@ -729,8 +811,8 @@ def anonymize_user(db, user_id):
     user = db.execute("SELECT id,email,display_name FROM users WHERE id=?", (user_id,)).fetchone()
     if not user: return None
     files = []
-    for row in db.execute("SELECT id,status,evidence_storage_key FROM submissions WHERE user_id=? AND status<>'published'", (user_id,)).fetchall():
-        if row["evidence_storage_key"]: files.append(row["evidence_storage_key"])
+    for row in db.execute("SELECT id,status,evidence_storage_key,model_storage_key FROM submissions WHERE user_id=? AND status<>'published'", (user_id,)).fetchall():
+        files += [k for k in (row["evidence_storage_key"], row["model_storage_key"]) if k]
         db.execute("DELETE FROM submissions WHERE id=?", (row["id"],))
     # Published team work stays (the team authorised it); only this person's name and address are taken out.
     for row in db.execute("SELECT id,members,member_emails FROM submissions WHERE user_id=? OR member_emails LIKE ?",
@@ -766,6 +848,63 @@ def person_export(db, email):
             "nota": "El contenido de las respuestas no incluye el correo o nombre; el registro separado de participación sí se liga a la cuenta para limitar duplicados."}
 
 
+def cohorts(db):
+    """Cohorts in order; each starts when it is opened and ends when the next one starts. The last one is current."""
+    row = db.execute("SELECT value FROM settings WHERE key='cohorts'").fetchone()
+    if row: return json.loads(row[0])
+    items = [{"name": DEFAULT_COHORT, "started_at": "1970-01-01 00:00:00"}]
+    db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('cohorts',?)", (json.dumps(items),))
+    return items
+
+
+def current_cohort(db) -> str:
+    return cohorts(db)[-1]["name"]
+
+
+def cohort_window(db, name):
+    """(start, end) timestamps of a cohort, for records that have no cohort column (comments, answers, reviews)."""
+    items = cohorts(db)
+    names = [c["name"] for c in items]
+    i = names.index(name) if name in names else len(items) - 1
+    return items[i]["started_at"], items[i + 1]["started_at"] if i + 1 < len(items) else "9999-12-31"
+
+
+def clean_alternatives(raw):
+    """Alternative solutions scored 1–3 on each criterion of the Incentiva form; returns (dict, error)."""
+    if not raw: return {}, ""
+    if not isinstance(raw, dict) or not isinstance(raw.get("items"), list): return None, "Las alternativas no tienen el formato esperado."
+    items = []
+    for entry in raw["items"][:3]:
+        if not isinstance(entry, dict): return None, "Las alternativas no tienen el formato esperado."
+        name = str(entry.get("name", "")).strip()[:160]
+        scores = entry.get("scores")
+        if not name: continue
+        if not isinstance(scores, list) or len(scores) != len(ALTERNATIVE_CRITERIA) or not all(isinstance(v, int) and 1 <= v <= 3 for v in scores):
+            return None, f"Puntúa de 1 a 3 cada criterio de la alternativa «{name[:40]}»."
+        items.append({"name": name, "scores": scores, "total": sum(scores)})
+    if not items: return {}, ""
+    try: chosen = int(raw.get("chosen", 0))
+    except (TypeError, ValueError): chosen = 0
+    return {"criteria": ALTERNATIVE_CRITERIA, "items": items, "chosen": chosen if 0 <= chosen < len(items) else 0}, ""
+
+
+def valid_stl(data: bytes) -> bool:
+    """Binary STL: 80-byte header, triangle count, 50 bytes per triangle. ASCII STL: 'solid … facet … endsolid'."""
+    if len(data) >= 84 and 84 + 50 * int.from_bytes(data[80:84], "little") == len(data): return True
+    head = data[:1024].lstrip().lower()
+    return head.startswith(b"solid") and b"facet" in data[:200000].lower()
+
+
+def keyword_counts(texts, limit=8):
+    counts = {}
+    for text in texts:
+        words = set(re.findall(r"[a-záéíóúñü0-9]{4,}", unicodedata.normalize("NFC", str(text).lower())))
+        for word in words:
+            plain = unicodedata.normalize("NFKD", word).encode("ascii", "ignore").decode()
+            if plain not in STOPWORDS: counts[word] = counts.get(word, 0) + 1
+    return [{"word": w, "count": c} for w, c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:limit] if c > 1]
+
+
 def staff_emails(db):
     emails = set(ADMIN_EMAILS) | {e for group in PROJECT_ADMIN_EMAILS.values() for e in group}
     return emails | {r["email"] for r in db.execute("SELECT email FROM staff_roles")}
@@ -779,8 +918,8 @@ def close_cohort(db):
     db.execute("""UPDATE resources SET status='draft',edited_at=CURRENT_TIMESTAMP
       WHERE source_submission_id IN (SELECT id FROM submissions WHERE showcase_consent=0)""")
     # Evidence of work that will not stay visible is not needed for future cohorts.
-    files = [r[0] for r in db.execute("SELECT evidence_storage_key FROM submissions WHERE showcase_consent=0 AND evidence_storage_key<>''")]
-    db.execute("UPDATE submissions SET evidence_storage_key='',evidence_filename='' WHERE showcase_consent=0")
+    files = [k for r in db.execute("SELECT evidence_storage_key,model_storage_key FROM submissions WHERE showcase_consent=0") for k in r if k]
+    db.execute("UPDATE submissions SET evidence_storage_key='',evidence_filename='',model_storage_key='',model_filename='' WHERE showcase_consent=0")
     for user_id in students: files += anonymize_user(db, user_id)
     # Member names were typed by the team and cannot always be matched to an account, so they all go.
     db.execute("UPDATE submissions SET members='[]',member_emails='[]'")
@@ -985,7 +1124,10 @@ class App(BaseHTTPRequestHandler):
         return c
 
     def cookie_header(self, name, value, max_age, http_only=True):
-        secure = "; Secure" if BASE_URL.startswith("https://") else ""
+        # Secure only when the browser reached the configured https address; the same instance can also be opened
+        # over plain http on the local network (classroom demo), where a Secure cookie would never be stored.
+        on_https_host = BASE_URL.startswith("https://") and self.headers.get("Host", "") == urllib.parse.urlparse(BASE_URL).netloc
+        secure = "; Secure" if on_https_host else ""
         http = "; HttpOnly" if http_only else ""
         return f"{name}={value}; Path=/; SameSite=Lax; Max-Age={max_age}{http}{secure}"
 
@@ -1039,6 +1181,14 @@ class App(BaseHTTPRequestHandler):
         if not row or not self.has_project_access(user, row["project_id"]): return None
         if row["status"] != "published" and row["project_id"] not in self.managed_projects(user): return None
         return dict(row)
+
+    def can_view_submission(self, user, row):
+        """Course editors, the submitter, members listed by address, or course members once the work is published."""
+        if row["project_id"] in self.managed_projects(user) or row["user_id"] == user["id"]: return True
+        if user["email"] in json.loads(row["member_emails"] or "[]"): return True
+        if not self.has_project_access(user, row["project_id"]): return False
+        with connect() as db:
+            return bool(db.execute("SELECT 1 FROM resources WHERE source_submission_id=? AND status='published'", (row["id"],)).fetchone())
 
     def reader_projects(self, user):
         return [p for p in OPEN_PROJECTS if not self.has_project_access(user, p)] if user else []
@@ -1100,10 +1250,12 @@ class App(BaseHTTPRequestHandler):
             managed = self.managed_projects(user) if user else []
             config = {p: {"sections": PROJECT_SECTIONS[p], "fields": PROJECT_FIELDS[p], "open": p in OPEN_PROJECTS,
                           "guide_question": GUIDE_QUESTIONS[p], "ticket_questions": EXIT_TICKET_QUESTIONS[p],
-                          "survey_templates": {kind: SURVEY_TEMPLATES[kind][p] for kind in SURVEY_TEMPLATES}} for p in PROJECTS}
+                          "survey_templates": {kind: SURVEY_TEMPLATES[kind][p] for kind in SURVEY_TEMPLATES},
+                          "pre_questions": PRE_SESSION_QUESTIONS[p], "alternative_criteria": ALTERNATIVE_CRITERIA if p == "incentiva" else []} for p in PROJECTS}
+            with connect() as db: cohort_now = current_cohort(db)
             return self.json({"user": user, "demo": DEMO_AUTH, "email_ready": email_ready, "google_ready": google_ready(),
                               "active_projects": active, "pending_projects": pending,"managed_projects":managed,
-                              "my_sections": sections, "project_config": config, "reader_projects": self.reader_projects(user)})
+                              "my_sections": sections, "project_config": config, "reader_projects": self.reader_projects(user), "cohort": cohort_now})
         if path == "/api/my-submissions":
             user = self.require_user()
             if not user: return
@@ -1177,7 +1329,7 @@ class App(BaseHTTPRequestHandler):
             if not managed: return self.json({"error": "No tienes permiso para gestionar tiquetes."}, 403)
             placeholders = ",".join("?" for _ in managed)
             with connect() as db:
-                rows = db.execute("""SELECT t.id,t.project_id,t.code,t.title,t.closes_at,t.feedback_url,t.active,t.created_at,
+                rows = db.execute("""SELECT t.id,t.project_id,t.code,t.title,t.closes_at,t.feedback_url,t.active,t.created_at,t.kind,t.cohort,
                   (SELECT COUNT(*) FROM exit_ticket_answers a WHERE a.ticket_id=t.id) answers
                   FROM exit_tickets t WHERE t.project_id IN (""" + placeholders + ") ORDER BY t.id DESC LIMIT 60", managed).fetchall()
             return self.json([{**dict(r), "url": f"{BASE_URL}/tiquete/{r['code']}", "open": bool(r["active"] and r["closes_at"] > time.time())} for r in rows])
@@ -1188,15 +1340,30 @@ class App(BaseHTTPRequestHandler):
             with connect() as db:
                 ticket = db.execute("SELECT * FROM exit_tickets WHERE id=?", (int(ticket_admin.group(1)),)).fetchone()
                 if not ticket or ticket["project_id"] not in self.managed_projects(user): return self.json({"error": "No tienes permiso para este tiquete."}, 403)
-                answers = [json.loads(r["answers"]) for r in db.execute(
-                    "SELECT answers FROM exit_ticket_answers WHERE ticket_id=? ORDER BY answered_on,id", (ticket["id"],))]
+                rows = db.execute("SELECT id,answers FROM exit_ticket_answers WHERE ticket_id=? ORDER BY answered_on,id", (ticket["id"],)).fetchall()
+                tag_rows = db.execute("""SELECT g.answer_id,g.question,g.tag FROM exit_ticket_tags g JOIN exit_ticket_answers a ON a.id=g.answer_id
+                  WHERE a.ticket_id=?""", (ticket["id"],)).fetchall()
+            answers = [json.loads(r["answers"]) for r in rows]
+            tags = {}
+            for t in tag_rows: tags.setdefault(t["answer_id"], {})[str(t["question"])] = t["tag"]
             questions = json.loads(ticket["questions"])
             if ticket_admin.group(2) == "qr.svg":
                 return self.send_bytes(qr.svg(f"{BASE_URL}/tiquete/{ticket['code']}").encode(), "image/svg+xml")
             if ticket_admin.group(2) == "responses":
-                return self.json({"title": ticket["title"], "questions": questions, "answers": answers})
-            return self.send_csv(f"tiquete-{ticket['code']}.csv", ["respuesta"] + questions,
-                                 [[i + 1] + [a[j] if j < len(a) else "" for j in range(len(questions))] for i, a in enumerate(answers)])
+                summary = []
+                for q in range(len(questions)):
+                    counts = {}
+                    for r in rows:
+                        tag = tags.get(r["id"], {}).get(str(q))
+                        if tag: counts[tag] = counts.get(tag, 0) + 1
+                    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+                    summary.append({"tags": [{"tag": t, "count": c} for t, c in ranked], "dominant": ranked[0][0] if ranked else None,
+                                    "keywords": keyword_counts(a[q] for a in answers if q < len(a))})
+                return self.json({"title": ticket["title"], "kind": ticket["kind"], "questions": questions, "summary": summary,
+                                  "answers": [{"id": r["id"], "answers": a, "tags": tags.get(r["id"], {})} for r, a in zip(rows, answers)]})
+            return self.send_csv(f"tiquete-{ticket['code']}.csv", ["respuesta"] + questions + [f"categoría {i + 1}" for i in range(len(questions))],
+                                 [[i + 1] + [a[j] if j < len(a) else "" for j in range(len(questions))]
+                                  + [tags.get(r["id"], {}).get(str(j), "") for j in range(len(questions))] for i, (r, a) in enumerate(zip(rows, answers))])
         ticket_path = re.fullmatch(r"/api/tickets/([A-Za-z0-9-]{4,12})", path)
         if ticket_path:
             user = self.require_user()
@@ -1206,7 +1373,7 @@ class App(BaseHTTPRequestHandler):
                 if not ticket or not self.has_project_access(user, ticket["project_id"]):
                     return self.json({"error": "Este tiquete no existe o no pertenece a tus asignaturas."}, 404)
                 answered = bool(db.execute("SELECT 1 FROM exit_ticket_respondents WHERE ticket_id=? AND user_id=?", (ticket["id"], user["id"])).fetchone())
-            return self.json({"code": ticket["code"], "project_id": ticket["project_id"], "title": ticket["title"],
+            return self.json({"code": ticket["code"], "project_id": ticket["project_id"], "title": ticket["title"], "kind": ticket["kind"],
                               "questions": json.loads(ticket["questions"]), "answered": answered, "feedback_url": ticket["feedback_url"],
                               "open": bool(ticket["active"] and ticket["closes_at"] > time.time()), "closes_at": ticket["closes_at"]})
         if path == "/api/my-tickets":
@@ -1215,7 +1382,7 @@ class App(BaseHTTPRequestHandler):
             project = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("project", [""])[0]
             if not self.has_project_access(user, project): return self.json({"error": "No tienes acceso a esta asignatura."}, 403)
             with connect() as db:
-                rows = db.execute("""SELECT t.code,t.title,t.closes_at,t.active,t.feedback_url,
+                rows = db.execute("""SELECT t.code,t.title,t.closes_at,t.active,t.feedback_url,t.kind,
                   EXISTS(SELECT 1 FROM exit_ticket_respondents r WHERE r.ticket_id=t.id AND r.user_id=?) answered
                   FROM exit_tickets t WHERE t.project_id=? ORDER BY t.id DESC LIMIT 30""", (user["id"], project)).fetchall()
             return self.json([{**dict(r), "answered": bool(r["answered"]), "open": bool(r["active"] and r["closes_at"] > time.time())} for r in rows])
@@ -1282,14 +1449,69 @@ class App(BaseHTTPRequestHandler):
         if path in ("/api/admin/indicators", "/api/admin/indicators.csv"):
             user = self.require_user()
             if not user: return
-            project = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("project", [""])[0]
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            project = query.get("project", [""])[0]
             if project not in self.managed_projects(user): return self.json({"error": "No tienes permiso para esta asignatura."}, 403)
             with connect() as db:
-                rows = project_indicators(db, project)
+                rows = project_indicators(db, project, query.get("cohort", [""])[0] or None)
             if path.endswith(".csv"):
                 return self.send_csv(f"indicadores-{project}-{time.strftime('%Y%m%d')}.csv", ["dimensión", "indicador", "valor"],
                                      [[r["group"], r["label"], r["value"]] for r in rows])
             return self.json(rows)
+        if path in ("/api/admin/cohorts", "/api/admin/report", "/api/admin/tracking", "/api/admin/projection", "/api/admin/qr.svg"):
+            user = self.require_user()
+            if not user: return
+            managed = self.managed_projects(user)
+            if not managed: return self.json({"error": "No tienes permiso para el panel docente."}, 403)
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            arg = lambda name: query.get(name, [""])[0]
+            if path == "/api/admin/qr.svg":
+                # QR for a page of this site (a work shown on the projector), never for an outside address.
+                target = arg("path")
+                if not re.fullmatch(r"/(incentiva|innova)/recurso/[A-Za-z0-9-]{1,120}", target): return self.json({"error": "Ruta inválida."}, 400)
+                return self.send_bytes(qr.svg(BASE_URL + target).encode(), "image/svg+xml")
+            with connect() as db:
+                if path == "/api/admin/cohorts":
+                    items = cohorts(db)
+                    for c in items:
+                        c["submissions"] = db.execute("SELECT COUNT(*) FROM submissions WHERE cohort=?", (c["name"],)).fetchone()[0]
+                        c["members"] = db.execute("SELECT COUNT(*) FROM project_memberships WHERE cohort=? AND status='active'", (c["name"],)).fetchone()[0]
+                    return self.json({"current": items[-1]["name"], "cohorts": items})
+                project = arg("project")
+                if project not in managed: return self.json({"error": "No tienes permiso para esta asignatura."}, 403)
+                cohort = arg("cohort") or current_cohort(db)
+                if path == "/api/admin/report":
+                    return self.json(project_report(db, project, cohort))
+                if path == "/api/admin/projection":
+                    section = arg("section")
+                    rows = db.execute("""SELECT r.id,r.slug,r.title,r.media_url,s.team_name,s.section FROM resources r
+                      JOIN submissions s ON s.id=r.source_submission_id WHERE r.project_id=? AND r.status='published' AND s.cohort=?
+                      AND (?='' OR s.section=?) ORDER BY s.section,lower(s.team_name)""", (project, cohort, section, section)).fetchall()
+                    return self.json([{**dict(r), "embed_url": video_embed_url(r["media_url"]), "path": f"/{project}/recurso/{r['slug']}"} for r in rows])
+                # Tracking: who in the cohort is linked to a delivery (as submitter or listed by address) and its state.
+                members = db.execute("""SELECT u.id,u.display_name,u.email,m.section FROM project_memberships m JOIN users u ON u.id=m.user_id
+                  WHERE m.project_id=? AND m.status='active' AND m.cohort=? ORDER BY m.section,u.display_name""", (project, cohort)).fetchall()
+                subs = db.execute("""SELECT id,user_id,team_name,section,status,member_emails,created_at FROM submissions
+                  WHERE project_id=? AND cohort=? ORDER BY id""", (project, cohort)).fetchall()
+                rank = {"published": 3, "review": 2, "approved": 2, "rejected": 1}
+                people = []
+                for m in members:
+                    linked = [s for s in subs if s["user_id"] == m["id"] or m["email"] in json.loads(s["member_emails"] or "[]")]
+                    best = max(linked, key=lambda s: (rank.get(s["status"], 0), s["id"]), default=None)
+                    people.append({"name": m["display_name"], "email": m["email"], "section": m["section"],
+                                   "team": best["team_name"] if best else "", "status": best["status"] if best else ""})
+                teams = {}
+                for s in subs:
+                    key = (s["section"], s["team_name"].strip().lower())
+                    if key not in teams or rank.get(s["status"], 0) >= rank.get(teams[key]["status"], 0):
+                        teams[key] = {"team": s["team_name"], "section": s["section"], "status": s["status"], "created_at": s["created_at"]}
+                sections = sorted({p["section"] for p in people} | {t["section"] for t in teams.values()})
+                summary = [{"section": sec or "Sin paralelo", "members": sum(p["section"] == sec for p in people),
+                            "linked": sum(p["section"] == sec and bool(p["status"]) for p in people),
+                            "teams": sum(t["section"] == sec for t in teams.values()),
+                            "published": sum(t["section"] == sec and t["status"] == "published" for t in teams.values()),
+                            "returned": sum(t["section"] == sec and t["status"] == "rejected" for t in teams.values())} for sec in sections]
+                return self.json({"cohort": cohort, "summary": summary, "people": people, "teams": sorted(teams.values(), key=lambda t: (t["section"], t["team"].lower()))})
         if path == "/api/admin/staff":
             user = self.require_user()
             if not user: return
@@ -1398,6 +1620,7 @@ class App(BaseHTTPRequestHandler):
             placeholders = ",".join("?" for _ in managed)
             with connect() as db:
                 submissions = db.execute("""SELECT s.id,s.project_id,s.team_name,s.section,s.members,s.title,s.summary,s.video_url,s.evidence_url,
+                  s.alternatives,CASE WHEN s.model_storage_key<>'' THEN 1 ELSE 0 END has_model,
                   s.project_fields,s.ai_declaration,s.consent_confirmed,s.evidence_storage_key,s.evidence_filename,s.created_at,u.display_name,u.email FROM submissions s
                   JOIN users u ON u.id=s.user_id WHERE s.status='review' AND s.project_id IN ("""+placeholders+") ORDER BY s.id DESC", managed).fetchall()
                 comments = db.execute("""SELECT c.id,c.body,c.badge,c.parent_id,c.created_at,r.title resource_title,r.project_id,u.display_name,u.email
@@ -1406,7 +1629,7 @@ class App(BaseHTTPRequestHandler):
                 requests = db.execute("""SELECT m.id,m.project_id,m.requested_at,u.display_name,u.email
                   FROM project_memberships m JOIN users u ON u.id=m.user_id
                   WHERE m.status='pending' AND m.project_id IN ("""+placeholders+") ORDER BY m.id", managed).fetchall()
-            submissions = [{**dict(r), "members": json.loads(r["members"] or "[]"),
+            submissions = [{**dict(r), "members": json.loads(r["members"] or "[]"), "alternatives": json.loads(r["alternatives"] or "{}"),
                             "fields": labeled_fields(r["project_id"], json.loads(r["project_fields"] or "{}"))} for r in submissions]
             return self.json({"submissions":submissions,"comments":[dict(r) for r in comments],
                               "access_requests":[dict(r) for r in requests]})
@@ -1425,6 +1648,8 @@ class App(BaseHTTPRequestHandler):
                   COALESCE(s.team_name,'') team_name,COALESCE(s.section,'') section,COALESCE(s.members,'[]') members,
                   COALESCE(s.project_fields,'{}') project_fields,COALESCE(s.ai_declaration,'') ai_declaration,
                   COALESCE(s.has_subtitles,0) has_subtitles,COALESCE(s.showcase_consent,0) showcase_consent,
+                  COALESCE(s.cohort,'') cohort,CASE WHEN COALESCE(s.model_storage_key,'')<>'' THEN 1 ELSE 0 END has_model,
+                  COALESCE(s.alternatives,'{}') alternatives,CASE WHEN COALESCE(s.evidence_storage_key,'')<>'' THEN 1 ELSE 0 END has_evidence,
                   (SELECT COUNT(*) FROM comments c WHERE c.resource_id=r.id AND c.status='published') comment_count
                   FROM resources r LEFT JOIN submissions s ON s.id=r.source_submission_id
                   WHERE r.project_id=? AND r.status='published' ORDER BY r.id""", (project,)).fetchall()
@@ -1434,33 +1659,41 @@ class App(BaseHTTPRequestHandler):
                 if not member and not item["showcase_consent"]: continue
                 item["tags"], item["members"] = json.loads(item["tags"]), json.loads(item["members"])
                 item["fields"] = labeled_fields(project, json.loads(item.pop("project_fields")))
+                item["alternatives"] = json.loads(item["alternatives"] or "{}")
                 item["quiz_count"] = len(json.loads(item.pop("quiz") or "[]"))
                 item["guide_question"] = item["guide_question"] or GUIDE_QUESTIONS[project]
                 item["embed_url"] = video_embed_url(item["media_url"])
-                if not member: item.update(has_file=0, file_filename="", quiz_count=0, comment_count=0)
+                if not member: item.update(has_file=0, file_filename="", quiz_count=0, comment_count=0, has_model=0, has_evidence=0)
                 result.append(item)
             return self.json(result)
-        evidence_path = re.fullmatch(r"/api/submissions/(\d+)/evidence", path)
-        if evidence_path:
+        submission_file = re.fullmatch(r"/api/submissions/(\d+)/(evidence|model|ficha)", path)
+        if submission_file:
             user = self.require_user()
             if not user: return
-            submission_id = int(evidence_path.group(1))
             with connect() as db:
-                row = db.execute("SELECT project_id,user_id,status,evidence_storage_key,evidence_filename FROM submissions WHERE id=?", (submission_id,)).fetchone()
-            if not row or not row["evidence_storage_key"]: return self.json({"error":"Archivo no encontrado."},404)
-            allowed = self.managed_projects(user) and row["project_id"] in self.managed_projects(user)
-            allowed = allowed or row["user_id"] == user["id"]
-            if not allowed and self.has_project_access(user, row["project_id"]):
-                with connect() as db:
-                    allowed = bool(db.execute("SELECT 1 FROM resources WHERE source_submission_id=? AND status='published'", (submission_id,)).fetchone())
-            if not allowed: return self.json({"error":"No tienes acceso a este archivo."},403)
-            key = row["evidence_storage_key"]
-            if not re.fullmatch(r"[a-f0-9]{40}", key): return self.json({"error":"Archivo no encontrado."},404)
+                row = db.execute("SELECT * FROM submissions WHERE id=?", (int(submission_file.group(1)),)).fetchone()
+            if not row: return self.json({"error":"Entrega no encontrada."},404)
+            if not self.can_view_submission(user, row): return self.json({"error":"No tienes acceso a esta entrega."},403)
+            kind = submission_file.group(2)
+            if kind == "ficha":
+                # The evidence sheet is generated from what the team entered, so nobody has to write it twice.
+                alternatives = json.loads(row["alternatives"] or "{}")
+                return self.json({"id": row["id"], "project_id": row["project_id"], "project_name": PROJECTS[row["project_id"]]["name"],
+                                  "course": PROJECTS[row["project_id"]]["course"], "cohort": row["cohort"], "team_name": row["team_name"],
+                                  "section": row["section"], "members": json.loads(row["members"] or "[]"), "title": row["title"],
+                                  "summary": row["summary"], "fields": labeled_fields(row["project_id"], json.loads(row["project_fields"] or "{}")),
+                                  "alternatives": alternatives, "video_url": row["video_url"], "evidence_url": row["evidence_url"],
+                                  "evidence_filename": row["evidence_filename"], "model_filename": row["model_filename"],
+                                  "ai_declaration": row["ai_declaration"], "has_subtitles": bool(row["has_subtitles"]),
+                                  "status": row["status"], "created_at": row["created_at"]})
+            key, filename = (row["evidence_storage_key"], row["evidence_filename"] or "ficha") if kind == "evidence" else (row["model_storage_key"], row["model_filename"] or "modelo.stl")
+            if not re.fullmatch(r"[a-f0-9]{40}", key or ""): return self.json({"error":"Archivo no encontrado."},404)
             file_path = UPLOAD_DIR / key
             if not file_path.is_file(): return self.json({"error":"El archivo ya no está disponible."},404)
-            name = urllib.parse.quote(row["evidence_filename"] or "ficha", safe="")
-            return self.send_bytes(file_path.read_bytes(), "application/octet-stream", headers={
-                "Content-Disposition": f"attachment; filename*=UTF-8''{name}", "X-Content-Type-Options":"nosniff"})
+            name = urllib.parse.quote(filename, safe="")
+            disposition = "inline" if kind == "model" else "attachment"
+            return self.send_bytes(file_path.read_bytes(), "model/stl" if kind == "model" else "application/octet-stream", headers={
+                "Content-Disposition": f"{disposition}; filename*=UTF-8''{name}", "X-Content-Type-Options":"nosniff"})
         comment_path = re.fullmatch(r"/api/projects/(incentiva|innova)/resources/([^/]+)/comments", path)
         if comment_path:
             user = self.require_user()
@@ -1488,7 +1721,7 @@ class App(BaseHTTPRequestHandler):
             kind = "text/css; charset=utf-8" if name.endswith(".css") else "text/javascript; charset=utf-8"
             return self.send_bytes(file.read_bytes(), kind)
         # The shell contains no course data; all project records are behind the authenticated API.
-        if path in ("/", "/login", "/admin", "/privacidad", "/consentimiento", "/ayuda") or re.fullmatch(r"/(tiquete|encuesta)/[A-Za-z0-9-]{4,12}", path) or re.fullmatch(r"/kit(/incentiva|/innova)?", path) or path == "/incentiva" or path.startswith("/incentiva/") or path == "/innova" or path.startswith("/innova/"):
+        if path in ("/", "/login", "/admin", "/privacidad", "/consentimiento", "/ayuda") or re.fullmatch(r"/(tiquete|encuesta)/[A-Za-z0-9-]{4,12}", path) or re.fullmatch(r"/kit(/incentiva|/innova)?", path) or re.fullmatch(r"/(ficha/\d+|proyeccion/(incentiva|innova)|informe/(incentiva|innova))", path) or path == "/incentiva" or path.startswith("/incentiva/") or path == "/innova" or path.startswith("/innova/"):
             return self.send_bytes((ROOT / "index.html").read_bytes())
         return self.json({"error": "No encontrado."}, 404)
 
@@ -1503,7 +1736,7 @@ class App(BaseHTTPRequestHandler):
             content_length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             return self.json({"error":"Solicitud inválida."},400)
-        limit = 12 * 1024 * 1024 if path in ("/api/submissions","/api/admin/resources","/api/admin/resources/update") else 100_000
+        limit = (24 if path == "/api/submissions" else 12) * 1024 * 1024 if path in ("/api/submissions","/api/admin/resources","/api/admin/resources/update") else 100_000
         if content_length < 0 or content_length > limit:
             return self.json({"error":"La solicitud supera el tamaño permitido."},413)
         length = content_length
@@ -1557,11 +1790,11 @@ class App(BaseHTTPRequestHandler):
                 if member and member["revoked"]:
                     return self.json({"error": "Tu acceso a esta asignatura fue retirado. Contacta a la docente."}, 403)
                 # A code created for one paralelo also records it, so deliveries and the catalog can be filtered by section.
-                db.execute("""INSERT INTO project_memberships(user_id,project_id,status,reviewed_at,reviewed_by,section)
-                  VALUES(?,?,'active',CURRENT_TIMESTAMP,?,?) ON CONFLICT(user_id,project_id) DO UPDATE SET
-                  status='active',reviewed_at=CURRENT_TIMESTAMP,reviewed_by=excluded.reviewed_by,
+                db.execute("""INSERT INTO project_memberships(user_id,project_id,status,reviewed_at,reviewed_by,section,cohort)
+                  VALUES(?,?,'active',CURRENT_TIMESTAMP,?,?,?) ON CONFLICT(user_id,project_id) DO UPDATE SET
+                  status='active',reviewed_at=CURRENT_TIMESTAMP,reviewed_by=excluded.reviewed_by,cohort=excluded.cohort,
                   section=CASE WHEN excluded.section<>'' THEN excluded.section ELSE project_memberships.section END""",
-                  (user["id"], project, row["created_by"], row["section"]))
+                  (user["id"], project, row["created_by"], row["section"], current_cohort(db)))
                 db.execute("UPDATE join_codes SET uses=uses+1 WHERE id=?", (row["id"],))
             return self.json({"ok": True, "project_id": project, "message": f"Listo: ya tienes acceso a {PROJECTS[project]['name']}."})
         if path == "/api/admin/join-codes":
@@ -1583,8 +1816,8 @@ class App(BaseHTTPRequestHandler):
                 for _ in range(5):
                     code = new_code()
                     try:
-                        db.execute("""INSERT INTO join_codes(code,project_id,label,section,created_by,created_at,expires_at,max_uses)
-                          VALUES(?,?,?,?,?,?,?,?)""", (code, project, label, section, user["id"], now, now + days * 86400, max_uses))
+                        db.execute("""INSERT INTO join_codes(code,project_id,label,section,created_by,created_at,expires_at,max_uses,cohort)
+                          VALUES(?,?,?,?,?,?,?,?,?)""", (code, project, label, section, user["id"], now, now + days * 86400, max_uses, current_cohort(db)))
                         break
                     except sqlite3.IntegrityError:
                         continue
@@ -1722,11 +1955,11 @@ class App(BaseHTTPRequestHandler):
             with connect() as db:
                 if db.execute("SELECT 1 FROM project_memberships WHERE user_id=? AND project_id=? AND revoked=1", (user["id"], project)).fetchone():
                     return self.json({"error": "Tu acceso a esta asignatura fue retirado. Contacta a la docente."}, 403)
-                db.execute("""INSERT INTO project_memberships(user_id,project_id,status) VALUES(?,?,'pending')
-                  ON CONFLICT(user_id,project_id) DO UPDATE SET
+                db.execute("""INSERT INTO project_memberships(user_id,project_id,status,cohort) VALUES(?,?,'pending',?)
+                  ON CONFLICT(user_id,project_id) DO UPDATE SET cohort=excluded.cohort,
                   status=CASE WHEN project_memberships.status='active' THEN 'active' ELSE 'pending' END,
                   requested_at=CASE WHEN project_memberships.status='active' THEN project_memberships.requested_at ELSE CURRENT_TIMESTAMP END,
-                  reviewed_at=NULL,reviewed_by=NULL""",(user["id"],project))
+                  reviewed_at=NULL,reviewed_by=NULL""",(user["id"],project,current_cohort(db)))
             return self.json({"ok":True,"message":"Solicitud enviada. La docente debe aprobar el acceso."},201)
         if path == "/api/comments":
             user = self.require_user()
@@ -1777,6 +2010,8 @@ class App(BaseHTTPRequestHandler):
             if not members: return self.json({"error": "Indica quiénes integran el equipo (un nombre por línea)."}, 400)
             project_fields, fields_error = clean_project_fields(project, payload.get("project_fields", {}))
             if fields_error: return self.json({"error": fields_error}, 400)
+            alternatives, alternatives_error = clean_alternatives(payload.get("alternatives") if project == "incentiva" else None)
+            if alternatives_error: return self.json({"error": alternatives_error}, 400)
             video_url = str(payload.get("video_url", "")).strip()[:1000]
             evidence_url = str(payload.get("evidence_url", "")).strip()[:1000]
             upload_key = ""
@@ -1787,8 +2022,17 @@ class App(BaseHTTPRequestHandler):
                 try: upload_bytes, upload_filename = decode_upload(file_b64, payload.get("evidence_filename", "ficha"), "La ficha")
                 except UploadError as error: return self.json({"error": str(error)}, error.status)
                 upload_key=secrets.token_hex(20)
-            if not video_url or (not evidence_url and not upload_key):
-                return self.json({"error": "Incluye el enlace al único video final y la ficha de evidencia (enlace o archivo)."}, 400)
+            model_key, model_name, model_bytes = "", "", b""
+            if project == "innova" and payload.get("model_file_base64"):
+                model_b64 = payload["model_file_base64"]
+                if not isinstance(model_b64, str) or len(model_b64) > 11_184_812: return self.json({"error": "El modelo 3D debe pesar como máximo 8 MB."}, 413)
+                try: model_bytes = base64.b64decode(model_b64, validate=True)
+                except (binascii.Error, ValueError): return self.json({"error": "No pudimos leer el modelo 3D."}, 400)
+                model_name = Path(str(payload.get("model_filename", "modelo.stl"))[:180].replace("\\", "/")).name
+                if not model_name.lower().endswith(".stl") or not valid_stl(model_bytes): return self.json({"error": "El modelo 3D debe ser un archivo STL válido."}, 400)
+                model_key = secrets.token_hex(20)
+            # The evidence sheet is generated from the form; a separate file or folder is optional.
+            if not video_url: return self.json({"error": "Incluye el enlace al único video final."}, 400)
             for url in (video_url, evidence_url):
                 if url:
                     parsed_url = urllib.parse.urlparse(url)
@@ -1800,23 +2044,27 @@ class App(BaseHTTPRequestHandler):
             if not payload.get("video_length_confirmed"):
                 return self.json({"error":"Confirma que el enlace corresponde al video final único de máximo cinco minutos."},400)
             with connect() as db:
-                existing=db.execute("SELECT 1 FROM submissions WHERE project_id=? AND lower(trim(section))=lower(trim(?)) AND lower(trim(team_name))=lower(trim(?)) AND status<>'rejected'",
-                                    (project,section,team_name)).fetchone()
+                cohort = current_cohort(db)
+                existing=db.execute("""SELECT 1 FROM submissions WHERE project_id=? AND cohort=? AND lower(trim(section))=lower(trim(?))
+                  AND lower(trim(team_name))=lower(trim(?)) AND status<>'rejected'""", (project,cohort,section,team_name)).fetchone()
                 if existing: return self.json({"error":"Este equipo ya registró su entrega final. Contacten a la docente para reemplazarla si corresponde."},409)
-                if upload_key:
-                    UPLOAD_DIR.mkdir(parents=True,exist_ok=True)
-                    (UPLOAD_DIR/upload_key).write_bytes(upload_bytes)
+                UPLOAD_DIR.mkdir(parents=True,exist_ok=True)
+                if upload_key: (UPLOAD_DIR/upload_key).write_bytes(upload_bytes)
+                if model_key: (UPLOAD_DIR/model_key).write_bytes(model_bytes)
                 try:
-                    db.execute("""INSERT INTO submissions(project_id,user_id,team_name,section,members,member_emails,title,summary,video_url,evidence_url,
-                      evidence_storage_key,evidence_filename,project_fields,ai_declaration,consent_confirmed,has_subtitles,showcase_consent)
-                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    cur = db.execute("""INSERT INTO submissions(project_id,user_id,team_name,section,members,member_emails,title,summary,video_url,evidence_url,
+                      evidence_storage_key,evidence_filename,project_fields,ai_declaration,consent_confirmed,has_subtitles,showcase_consent,
+                      cohort,alternatives,model_storage_key,model_filename)
+                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (project, user["id"], team_name, section, json.dumps(members, ensure_ascii=False), json.dumps(member_emails), title, summary,
                        video_url, evidence_url, upload_key,upload_filename,json.dumps(project_fields, ensure_ascii=False),
-                       str(payload.get("ai_declaration", ""))[:2000],consent,int(bool(payload.get("has_subtitles"))),int(bool(payload.get("showcase_consent")))))
+                       str(payload.get("ai_declaration", ""))[:2000],consent,int(bool(payload.get("has_subtitles"))),int(bool(payload.get("showcase_consent"))),
+                       cohort, json.dumps(alternatives, ensure_ascii=False), model_key, model_name))
                 except sqlite3.IntegrityError:
-                    if upload_key: (UPLOAD_DIR/upload_key).unlink(missing_ok=True)
+                    for key in (upload_key, model_key):
+                        if key: (UPLOAD_DIR/key).unlink(missing_ok=True)
                     return self.json({"error":"Este equipo ya registró una entrega final."},409)
-            return self.json({"ok": True, "message": "Entrega recibida para revisión."}, 201)
+            return self.json({"ok": True, "id": cur.lastrowid, "message": "Entrega recibida para revisión. Ya puedes descargar la ficha de evidencia generada."}, 201)
         if path == "/api/admin/tickets":
             user = self.require_user()
             if not user: return
@@ -1826,7 +2074,8 @@ class App(BaseHTTPRequestHandler):
             raw_questions = payload.get("questions") if isinstance(payload.get("questions"), list) else []
             questions = [str(q).strip()[:400] for q in raw_questions if str(q).strip()][:5]
             if not title: return self.json({"error": "Ponle un nombre a la sesión (por ejemplo, «Fase 1 · sesión 3»)."}, 400)
-            if not questions: questions = EXIT_TICKET_QUESTIONS[project]
+            kind = "previa" if payload.get("kind") == "previa" else "salida"
+            if not questions: questions = PRE_SESSION_QUESTIONS[project] if kind == "previa" else EXIT_TICKET_QUESTIONS[project]
             try: hours = max(1, min(int(payload.get("hours") or 24), 24 * 14))
             except (TypeError, ValueError): return self.json({"error": "Revisa la duración."}, 400)
             now = int(time.time())
@@ -1834,12 +2083,43 @@ class App(BaseHTTPRequestHandler):
                 for _ in range(5):
                     code = new_code(6)
                     try:
-                        db.execute("""INSERT INTO exit_tickets(project_id,code,title,questions,created_by,created_at,closes_at)
-                          VALUES(?,?,?,?,?,?,?)""", (project, code, title, json.dumps(questions, ensure_ascii=False), user["id"], now, now + hours * 3600))
+                        db.execute("""INSERT INTO exit_tickets(project_id,code,title,questions,created_by,created_at,closes_at,kind,cohort)
+                          VALUES(?,?,?,?,?,?,?,?,?)""", (project, code, title, json.dumps(questions, ensure_ascii=False), user["id"], now,
+                                                         now + hours * 3600, kind, current_cohort(db)))
                         break
                     except sqlite3.IntegrityError:
                         continue
             return self.json({"ok": True, "code": code, "url": f"{BASE_URL}/tiquete/{code}"}, 201)
+        ticket_tag = re.fullmatch(r"/api/admin/tickets/(\d+)/tag", path)
+        if ticket_tag:
+            user = self.require_user()
+            if not user: return
+            answer_id = str(payload.get("answer_id", ""))
+            tag = " ".join(str(payload.get("tag", "")).split())[:60]
+            with connect() as db:
+                ticket = db.execute("SELECT project_id,questions FROM exit_tickets WHERE id=?", (int(ticket_tag.group(1)),)).fetchone()
+                if not ticket or ticket["project_id"] not in self.managed_projects(user): return self.json({"error": "No tienes permiso para este tiquete."}, 403)
+                question = int(payload.get("question", -1))
+                if not 0 <= question < len(json.loads(ticket["questions"])): return self.json({"error": "Pregunta inválida."}, 400)
+                if not db.execute("SELECT 1 FROM exit_ticket_answers WHERE id=? AND ticket_id=?", (answer_id, int(ticket_tag.group(1)))).fetchone():
+                    return self.json({"error": "Respuesta no encontrada."}, 404)
+                if tag: db.execute("INSERT INTO exit_ticket_tags(answer_id,question,tag) VALUES(?,?,?) ON CONFLICT(answer_id,question) DO UPDATE SET tag=excluded.tag", (answer_id, question, tag))
+                else: db.execute("DELETE FROM exit_ticket_tags WHERE answer_id=? AND question=?", (answer_id, question))
+            return self.json({"ok": True})
+        if path == "/api/admin/cohorts":
+            user = self.require_user()
+            if not user: return
+            if user["role"] != "admin": return self.json({"error": "Solo la administración global abre cohortes."}, 403)
+            name = " ".join(str(payload.get("name", "")).split())[:20]
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{1,19}", name): return self.json({"error": "Usa un nombre corto, por ejemplo «2027-1»."}, 400)
+            with connect() as db:
+                items = cohorts(db)
+                if name in [c["name"] for c in items]: return self.json({"error": "Esa cohorte ya existe."}, 409)
+                items.append({"name": name, "started_at": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())})
+                db.execute("UPDATE settings SET value=? WHERE key='cohorts'", (json.dumps(items),))
+                # Course codes belong to the cohort that was taught with them.
+                db.execute("UPDATE join_codes SET active=0 WHERE active=1")
+            return self.json({"ok": True, "message": f"Cohorte {name} abierta. Lo anterior queda archivado y visible; crea los nuevos códigos del curso."}, 201)
         if path == "/api/admin/tickets/update":
             user = self.require_user()
             if not user: return
@@ -1941,9 +2221,9 @@ class App(BaseHTTPRequestHandler):
                 for _ in range(5):
                     code = new_code(6)
                     try:
-                        db.execute("""INSERT INTO surveys(project_id,code,kind,moment,title,items,scale,created_by,created_at,closes_at)
-                          VALUES(?,?,?,?,?,?,?,?,?,?)""", (project, code, kind, moment, title, json.dumps(items, ensure_ascii=False),
-                                                         json.dumps(scale, ensure_ascii=False), user["id"], now, now + hours * 3600))
+                        db.execute("""INSERT INTO surveys(project_id,code,kind,moment,title,items,scale,created_by,created_at,closes_at,cohort)
+                          VALUES(?,?,?,?,?,?,?,?,?,?,?)""", (project, code, kind, moment, title, json.dumps(items, ensure_ascii=False),
+                                                         json.dumps(scale, ensure_ascii=False), user["id"], now, now + hours * 3600, current_cohort(db)))
                         break
                     except sqlite3.IntegrityError:
                         continue
@@ -2254,9 +2534,10 @@ class App(BaseHTTPRequestHandler):
               (provider_subject, email, name, role))
             user = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
             if grant_project in PROJECTS:
-                db.execute("""INSERT INTO project_memberships(user_id,project_id,status,reviewed_at,reviewed_by)
-                  VALUES(?,?,'active',CURRENT_TIMESTAMP,?) ON CONFLICT(user_id,project_id) DO UPDATE SET
-                  status='active',revoked=0,reviewed_at=CURRENT_TIMESTAMP,reviewed_by=excluded.reviewed_by""", (user["id"], grant_project, granted_by))
+                db.execute("""INSERT INTO project_memberships(user_id,project_id,status,reviewed_at,reviewed_by,cohort)
+                  VALUES(?,?,'active',CURRENT_TIMESTAMP,?,?) ON CONFLICT(user_id,project_id) DO UPDATE SET
+                  status='active',revoked=0,reviewed_at=CURRENT_TIMESTAMP,reviewed_by=excluded.reviewed_by,cohort=excluded.cohort""",
+                  (user["id"], grant_project, granted_by, current_cohort(db)))
             raw = secrets.token_urlsafe(36)
             db.execute("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
                        (token_hash(raw), user["id"], int(time.time()) + SESSION_SECONDS))

@@ -22,7 +22,7 @@ check "sin servir el código" "$(code /server.py)" "^404"
 check "sin servir la carpeta del curso" "$(code '/Innova%20en%20el%20aula%202S%202026/Tiquetes%20de%20Salida.docx')" "^404"
 check "selectores CSS sin espacios tras los dos puntos" "$(python3 -c "
 import re,sys
-css=open(sys.argv[1]).read()
+css=re.sub(r'/[*].*?[*]/','',open(sys.argv[1]).read(),flags=re.S)
 bad=[m.group(1).strip() for m in re.finditer(r'(?:^|})\\s*([^{}@]+?)\\{', css) if re.search(r'[\\w\\])]: +[:a-z(]', m.group(1))]
 print(len(bad), bad[:3])" "$APP/static/styles.css")" "^0 \\[\\]"
 check "CSP del reproductor y foco" "$(curl -s -D - -o /dev/null $B/)" "frame-src https://www.youtube-nocookie.com"

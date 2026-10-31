@@ -3,7 +3,7 @@ const headerActions = document.querySelector('#header-actions');
 const toast = document.querySelector('#toast');
 const PROJECTS = {
   incentiva: {name:'Incentiva en el Aula', course:'Metodología de la Investigación', short:'Innovación en salud aplicada al territorio', accent:'forest', kind:'Video-prototipo + Ficha de Evidencia', description:'Diseña una respuesta fundamentada a un desafío sociosanitario real.'},
-  innova: {name:'Innova en el Aula', course:'Fundamentos de Diagnóstico Molecular', short:'Casos, prototipos y diagnóstico molecular', accent:'clay', kind:'Cápsula + prototipo 3D + matriz diagnóstica', description:'Explica cómo una alteración molecular se relaciona con un caso y su diagnóstico.'}
+  innova: {name:'Innova en el Aula', course:'Fundamentos de Diagnóstico Molecular', short:'Casos, prototipos y diagnóstico molecular', accent:'plum', kind:'Cápsula + prototipo 3D + matriz diagnóstica', description:'Explica cómo una alteración molecular se relaciona con un caso y su diagnóstico.'}
 };
 let user = null;
 let activeProjects = [];
@@ -188,20 +188,22 @@ function showResources(projectId) {
   const root=document.querySelector('#project-content'); if(!root)return;
   const items=resourceCache[projectId]||[];
   const cats=[...new Set(items.map(x=>x.category))];
-  const sections=[...new Set(items.map(x=>x.section).filter(Boolean))];
+  const sections=[...new Set(items.map(x=>x.section).filter(Boolean))], cohortsSeen=[...new Set(items.map(x=>x.cohort).filter(Boolean))].sort().reverse();
   const surprise=projectId==='incentiva'&&items.some(x=>/caso|desaf[ií]o/i.test(x.category));
   const empty=projectId==='incentiva'?'La docente publicará aquí los desafíos simulados. Cuando estén disponibles, podrán sacar uno de la caja sorpresa.':'Todavía no hay materiales publicados para esta asignatura.';
   root.innerHTML=`<div class="toolbar"><label class="search-wrap"><span class="visually-hidden">Buscar en este proyecto</span><input id="resource-search" type="search" placeholder="Buscar por tema, gen, técnica o equipo"></label>
       <label><span class="visually-hidden">Filtrar por tipo</span><select id="category-filter" class="select"><option value="">Todos los tipos</option>${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select></label>
+      ${cohortsSeen.length>1?`<label><span class="visually-hidden">Filtrar por cohorte</span><select id="cohort-filter" class="select"><option value="">Todas las cohortes</option>${cohortsSeen.map(c=>`<option>${esc(c)}</option>`).join('')}</select></label>`:''}
       ${sections.length?`<label><span class="visually-hidden">Filtrar por paralelo</span><select id="section-filter" class="select"><option value="">Todos los paralelos</option>${sections.map(c=>`<option>${esc(c)}</option>`).join('')}</select></label>`:''}</div>
     ${surprise?'<div class="surprise-row"><div><strong>Caja sorpresa</strong><p class="helper">Sortea un desafío simulado para iniciar el trabajo del equipo.</p></div><button class="button secondary small" type="button" id="surprise-case">Sacar un desafío →</button></div>':''}
     <div class="resource-grid" id="resource-grid"></div>`;
   const search=root.querySelector('#resource-search'), select=root.querySelector('#category-filter'), sectionSelect=root.querySelector('#section-filter'), grid=root.querySelector('#resource-grid');
-  const update=()=>{const q=search.value.toLowerCase(), cat=select.value, section=sectionSelect?sectionSelect.value:'';
-    const arr=items.filter(x=>searchText(x).includes(q)&&(!cat||x.category===cat)&&(!section||x.section===section));
+  const cohortSelect=root.querySelector('#cohort-filter');
+  const update=()=>{const q=search.value.toLowerCase(), cat=select.value, section=sectionSelect?sectionSelect.value:'', cohort=cohortSelect?cohortSelect.value:'';
+    const arr=items.filter(x=>searchText(x).includes(q)&&(!cat||x.category===cat)&&(!section||x.section===section)&&(!cohort||x.cohort===cohort));
     grid.innerHTML=arr.length?arr.map(x=>resourceCard(x,projectId)).join(''):`<div class="empty-state">${items.length?'No encontramos recursos con esa combinación. Prueba otra palabra o quita un filtro.':empty}</div>`;};
   update();
-  search.addEventListener('input',update); select.addEventListener('change',update); if(sectionSelect)sectionSelect.addEventListener('change',update);
+  search.addEventListener('input',update); select.addEventListener('change',update); if(sectionSelect)sectionSelect.addEventListener('change',update); if(cohortSelect)cohortSelect.addEventListener('change',update);
   const randomButton=root.querySelector('#surprise-case');if(randomButton)randomButton.addEventListener('click',()=>{const cases=items.filter(x=>/caso|desaf[ií]o/i.test(x.category));if(!cases.length){notify('La docente aún no ha publicado desafíos para sortear.');return;}const selected=cases[Math.floor(Math.random()*cases.length)];go(`/${projectId}/recurso/${encodeURIComponent(selected.slug)}`);});
   grid.addEventListener('click',e=>{const a=e.target.closest('[data-resource]');if(a){e.preventDefault();go(`/${projectId}/recurso/${a.dataset.resource}`);}});
 }
@@ -209,7 +211,7 @@ function resourceCard(resource,projectId) {
   const team=resource.team_name?`<span class="resource-team">${esc(resource.team_name)}${resource.section?' · '+esc(resource.section):''}</span>`:'';
   return `<a class="resource-card" href="/${projectId}/recurso/${encodeURIComponent(resource.slug)}" data-resource="${esc(resource.slug)}">
     <div class="resource-top"><span class="resource-category">${esc(resource.category)}</span><span class="resource-arrow" aria-hidden="true">↗</span></div>
-    <h3>${esc(resource.title)}</h3>${team}<p>${esc(resource.summary)}</p><div class="tags">${resource.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}${resource.has_file?'<span class="tag">Archivo descargable</span>':''}${resource.ai_declaration?'<span class="tag">IA declarada</span>':''}${resource.has_subtitles?'<span class="tag">Subtitulado</span>':''}${resource.quiz_count?'<span class="tag">Preguntas de control</span>':''}${resource.comment_count?`<span class="tag">Foro · ${resource.comment_count}</span>`:''}</div>
+    <h3>${esc(resource.title)}</h3>${team}<p>${esc(resource.summary)}</p><div class="tags">${resource.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}${resource.has_file?'<span class="tag">Archivo descargable</span>':''}${resource.ai_declaration?'<span class="tag">IA declarada</span>':''}${resource.has_subtitles?'<span class="tag">Subtitulado</span>':''}${resource.quiz_count?'<span class="tag">Preguntas de control</span>':''}${resource.comment_count?`<span class="tag">Foro · ${resource.comment_count}</span>`:''}${resource.has_model?'<span class="tag">Modelo 3D</span>':''}${resource.alternatives?.items?.length?'<span class="tag">Alternativas comparadas</span>':''}</div>
   </a>`;
 }
 function fieldInput(spec) {
@@ -230,8 +232,11 @@ function showDelivery(projectId) {
       <div class="field"><label for="s-title">Título del trabajo</label><input id="s-title" name="title" required maxlength="180"></div>
       <div class="field"><label for="s-summary">${isInnova?'Resumen del caso y de la cápsula':'Problema y solución propuesta'}</label><textarea id="s-summary" name="summary" required maxlength="5000"></textarea></div>
       <fieldset class="field-group"><legend>${isInnova?'Recorrido molecular: del hallazgo al diagnóstico':'Ficha del desafío'}</legend><p class="helper">${isInnova?'Sigan la cadena de la guía ABP: alteración, proceso, efecto molecular, cambio celular, patología, técnica y controles.':'Sigan los bloques del storyboard: problema, personas afectadas, solución, simulación, resultado e indicador, y limitación.'}</p>${config.fields.map(fieldInput).join('')}</fieldset>
+      ${config.alternative_criteria?.length?alternativesFieldset(config.alternative_criteria):''}
       <div class="field"><label for="s-video">Enlace al único video final (MP4, máximo 5 minutos)</label><input id="s-video" name="video_url" type="url" required placeholder="https://"><span class="helper">Suban el MP4 a una carpeta compartida o plataforma de video y peguen aquí un enlace accesible para la docente.</span></div>
-      <div class="field"><label for="s-evidence-file">Subir ficha de evidencia</label><input id="s-evidence-file" name="evidence_file" type="file" accept=".pdf,.docx,.pptx,.xlsx,.odt,.txt"><span class="helper">PDF, DOCX, PPTX, XLSX, ODT o TXT; máximo 8 MB. Plantilla: <a href="/materiales/${isInnova?'matriz-diagnostica-innova':'ficha-evidencia-incentiva'}.docx" download>${isInnova?'matriz diagnóstica':'Ficha de Evidencia'} (Word)</a>. Si prefieren, pueden entregar una carpeta compartida con enlace HTTPS:</span><input id="s-evidence" name="evidence_url" type="url" placeholder="https://"></div>
+      <div class="notice">La ${isInnova?'matriz diagnóstica':'Ficha de Evidencia'} se genera automáticamente con lo que escriban en este formulario: después de enviar, la pueden abrir, imprimir o guardar en PDF desde «Tus entregas». No hace falta llenar la plantilla Word.</div>
+      ${isInnova?'<div class="field"><label for="s-model">Modelo 3D del prototipo (opcional)</label><input id="s-model" name="model_file" type="file" accept=".stl"><span class="helper">Archivo STL exportado desde Tinkercad, Fusion 360 o Blender; máximo 8 MB. Se verá en la ficha y se podrá girar.</span></div>':''}
+      <div class="field"><label for="s-evidence-file">Material adicional (opcional)</label><input id="s-evidence-file" name="evidence_file" type="file" accept=".pdf,.docx,.pptx,.xlsx,.odt,.txt"><span class="helper">Si quieren sumar anexos, tablas o la <a href="/materiales/${isInnova?'matriz-diagnostica-innova':'ficha-evidencia-incentiva'}.docx" download>plantilla Word</a> completa: PDF, DOCX, PPTX, XLSX, ODT o TXT, máximo 8 MB. También pueden pegar el enlace HTTPS de una carpeta compartida:</span><input id="s-evidence" name="evidence_url" type="url" placeholder="https://"></div>
       <div class="field"><label for="s-ai">Declaración de uso de IA</label><textarea id="s-ai" name="ai_declaration" placeholder="Indica qué herramienta usó el equipo y para qué. Si no usaron IA, escríbanlo."></textarea></div>
       <label class="helper"><input name="has_subtitles" type="checkbox"> El video tiene subtítulos (o texto en pantalla que permite seguirlo sin audio).</label>
       <label class="helper"><input name="video_length_confirmed" type="checkbox" required> Confirmamos que este es el único video final del equipo y que dura máximo cinco minutos.</label>
@@ -242,19 +247,101 @@ function showDelivery(projectId) {
   document.querySelector('#submission-form').addEventListener('submit',async event=>{
     event.preventDefault(); const formElement=event.currentTarget, form=new FormData(formElement), error=document.querySelector('#submission-error'), button=formElement.querySelector('button[type="submit"]');
     try {
-      const file=document.querySelector('#s-evidence-file').files[0];
-      if(!file&&!form.get('evidence_url')) throw new Error('Sube la ficha o incluye un enlace HTTPS a la carpeta compartida.');
-      if(file&&file.size>8*1024*1024) throw new Error('La ficha debe pesar como máximo 8 MB.');
+      const file=document.querySelector('#s-evidence-file').files[0], model=document.querySelector('#s-model')?.files[0];
+      if(file&&file.size>8*1024*1024) throw new Error('El material adicional debe pesar como máximo 8 MB.');
+      if(model&&model.size>8*1024*1024) throw new Error('El modelo 3D debe pesar como máximo 8 MB.');
       button.disabled=true;
-      const evidence_file_base64=file?await fileToBase64(file):'';
+      const evidence_file_base64=file?await fileToBase64(file):'', model_file_base64=model?await fileToBase64(model):'';
       const project_fields=Object.fromEntries(config.fields.map(f=>[f.key,form.get(`pf_${f.key}`)||'']));
-      const res=await api('/api/submissions',{method:'POST',body:JSON.stringify({project_id:projectId,team_name:form.get('team_name'),section:form.get('section')||'',members:form.get('members'),title:form.get('title'),summary:form.get('summary'),video_url:form.get('video_url'),evidence_url:form.get('evidence_url'),evidence_file_base64,evidence_filename:file?.name||'',ai_declaration:form.get('ai_declaration'),project_fields,video_length_confirmed:form.get('video_length_confirmed')==='on',consent_confirmed:form.get('consent')==='on',has_subtitles:form.get('has_subtitles')==='on',showcase_consent:form.get('showcase_consent')==='on'})});
-      notify(res.message); formElement.reset(); error.textContent=''; loadMySubmissions(projectId);
+      const res=await api('/api/submissions',{method:'POST',body:JSON.stringify({project_id:projectId,team_name:form.get('team_name'),section:form.get('section')||'',members:form.get('members'),title:form.get('title'),summary:form.get('summary'),video_url:form.get('video_url'),evidence_url:form.get('evidence_url'),evidence_file_base64,evidence_filename:file?.name||'',ai_declaration:form.get('ai_declaration'),project_fields,alternatives:readAlternatives(formElement,config.alternative_criteria||[]),model_file_base64,model_filename:model?.name||'',video_length_confirmed:form.get('video_length_confirmed')==='on',consent_confirmed:form.get('consent')==='on',has_subtitles:form.get('has_subtitles')==='on',showcase_consent:form.get('showcase_consent')==='on'})});
+      notify(res.message); formElement.reset(); error.textContent=''; await loadMySubmissions(projectId);
+      if(res.id) document.querySelector('#my-submissions').scrollIntoView({behavior:'smooth',block:'start'});
     }
     catch(err){error.textContent=err.message;}
     finally{button.disabled=false;}
   });
   loadMySubmissions(projectId);
+}
+function alternativesFieldset(criteria) {
+  const select=(alt,i)=>`<select class="select score-select" name="alt${alt}_c${i}" aria-label="Alternativa ${alt+1}: ${esc(criteria[i])}"><option value="">–</option><option>1</option><option>2</option><option>3</option></select>`;
+  return `<fieldset class="field-group"><legend>Comparación de alternativas (recomendada)</legend><p class="helper">Antes de elegir, la postulación pide comparar al menos dos ideas. Puntúen cada criterio de 1 (bajo) a 3 (alto) y marquen la elegida. Aparece en la ficha de evidencia.</p>
+    <div class="table-scroll"><table class="code-table alternatives-table"><thead><tr><th>Criterio</th>${[0,1,2].map(a=>`<th><label class="visually-hidden" for="alt${a}-name">Nombre de la alternativa ${a+1}</label><input id="alt${a}-name" name="alt${a}_name" maxlength="160" placeholder="Alternativa ${String.fromCharCode(65+a)}"></th>`).join('')}</tr></thead>
+    <tbody>${criteria.map((c,i)=>`<tr><td>${esc(c)}</td>${[0,1,2].map(a=>`<td>${select(a,i)}</td>`).join('')}</tr>`).join('')}
+    <tr><td><b>Elegida</b></td>${[0,1,2].map(a=>`<td><label><input type="radio" name="alt_chosen" value="${a}"${a===0?' checked':''}> Esta</label></td>`).join('')}</tr></tbody></table></div></fieldset>`;
+}
+function readAlternatives(form, criteria) {
+  if(!criteria.length) return null;
+  const items=[]; let chosen=0;
+  [0,1,2].forEach(a=>{const name=(form.elements[`alt${a}_name`]?.value||'').trim(); if(!name) return;
+    const scores=criteria.map((_,i)=>Number(form.elements[`alt${a}_c${i}`].value)||0);
+    if(scores.some(v=>!v)) throw new Error(`Puntúa todos los criterios de «${name}» o borra su nombre.`);
+    if(form.elements.alt_chosen.value===String(a)) chosen=items.length;
+    items.push({name,scores});});
+  return items.length?{items,chosen}:null;
+}
+function alternativesTable(alt) {
+  if(!alt?.items?.length) return '';
+  return `<div class="table-scroll"><table class="code-table alternatives-table"><thead><tr><th>Criterio (1 a 3)</th>${alt.items.map((it,i)=>`<th>${esc(it.name)}${i===alt.chosen?' <span class="status-label">✓ elegida</span>':''}</th>`).join('')}</tr></thead>
+    <tbody>${alt.criteria.map((c,ci)=>`<tr><td>${esc(c)}</td>${alt.items.map(it=>`<td>${it.scores[ci]}</td>`).join('')}</tr>`).join('')}<tr><td><b>Total</b></td>${alt.items.map(it=>`<td><b>${it.total}</b></td>`).join('')}</tr></tbody></table></div>`;
+}
+// Minimal STL viewer on a 2D canvas: flat-shaded triangles, painter's algorithm, drag or arrow keys to rotate.
+async function mountStlViewer(canvas, url) {
+  const ctx=canvas.getContext('2d'); let tris;
+  try{const buffer=await (await fetch(url,{credentials:'same-origin'})).arrayBuffer(); tris=parseStl(buffer);}
+  catch{canvas.replaceWith(Object.assign(document.createElement('p'),{className:'helper',textContent:'No se pudo abrir el modelo 3D.'}));return;}
+  if(!tris.length) return;
+  let min=[Infinity,Infinity,Infinity], max=[-Infinity,-Infinity,-Infinity];
+  tris.forEach(t=>t.forEach(v=>v.forEach((c,i)=>{min[i]=Math.min(min[i],c);max[i]=Math.max(max[i],c);})));
+  const center=min.map((m,i)=>(m+max[i])/2), size=Math.max(...max.map((m,i)=>m-min[i]))||1;
+  let yaw=0.6, pitch=-0.5;
+  const accent=getComputedStyle(canvas).color.match(/\d+/g).map(Number);
+  const draw=()=>{const w=canvas.width=canvas.clientWidth*devicePixelRatio, h=canvas.height=canvas.clientHeight*devicePixelRatio, scale=Math.min(w,h)*0.8/size;
+    const cy=Math.cos(yaw), sy=Math.sin(yaw), cp=Math.cos(pitch), sp=Math.sin(pitch);
+    const tf=v=>{const x=v[0]-center[0], y=v[1]-center[1], z=v[2]-center[2]; const x1=cy*x+sy*y, y1=-sy*x+cy*y; return [x1, cp*z-sp*y1, sp*z+cp*y1];};
+    const faces=[];
+    for(const t of tris){const a=tf(t[0]), b=tf(t[1]), c=tf(t[2]);
+      const u=[b[0]-a[0],b[1]-a[1],b[2]-a[2]], v=[c[0]-a[0],c[1]-a[1],c[2]-a[2]], n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+      const len=Math.hypot(...n)||1, light=Math.abs(n[2]/len)*0.75+0.25; faces.push([(a[2]+b[2]+c[2])/3,a,b,c,light]);}
+    faces.sort((f,g)=>f[0]-g[0]);
+    ctx.clearRect(0,0,w,h);
+    for(const [,a,b,c,l] of faces){ctx.beginPath();ctx.moveTo(w/2+a[0]*scale,h/2-a[1]*scale);ctx.lineTo(w/2+b[0]*scale,h/2-b[1]*scale);ctx.lineTo(w/2+c[0]*scale,h/2-c[1]*scale);ctx.closePath();
+      ctx.fillStyle=`rgb(${accent.slice(0,3).map(x=>Math.round(x*l+255*(1-l)*0.15)).join(',')})`;ctx.fill();}};
+  let drag=null;
+  canvas.addEventListener('pointerdown',e=>{drag=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId);});
+  canvas.addEventListener('pointermove',e=>{if(!drag)return;yaw+=(e.clientX-drag[0])*0.01;pitch=Math.max(-1.5,Math.min(1.5,pitch+(e.clientY-drag[1])*0.01));drag=[e.clientX,e.clientY];draw();});
+  canvas.addEventListener('pointerup',()=>{drag=null;});
+  canvas.addEventListener('keydown',e=>{const k={ArrowLeft:[-0.2,0],ArrowRight:[0.2,0],ArrowUp:[0,-0.2],ArrowDown:[0,0.2]}[e.key];if(!k)return;e.preventDefault();yaw+=k[0];pitch=Math.max(-1.5,Math.min(1.5,pitch+k[1]));draw();});
+  new ResizeObserver(draw).observe(canvas); draw();
+}
+function parseStl(buffer) {
+  const view=new DataView(buffer), count=buffer.byteLength>=84?view.getUint32(80,true):0, tris=[];
+  if(84+count*50===buffer.byteLength){
+    for(let i=0;i<Math.min(count,60000);i++){const o=84+i*50+12;tris.push([0,1,2].map(k=>[0,1,2].map(j=>view.getFloat32(o+k*12+j*4,true))));}
+    return tris;}
+  const text=new TextDecoder().decode(buffer), nums=[...text.matchAll(/vertex\s+([-+\d.eE]+)\s+([-+\d.eE]+)\s+([-+\d.eE]+)/g)].map(m=>[+m[1],+m[2],+m[3]]);
+  for(let i=0;i+2<nums.length&&tris.length<60000;i+=3) tris.push([nums[i],nums[i+1],nums[i+2]]);
+  return tris;
+}
+async function fichaPage(id) {
+  main.innerHTML='<div class="resource-detail"><div class="loading">Generando ficha…</div></div>';
+  let f;
+  try{f=await api(`/api/submissions/${id}/ficha`);}
+  catch(e){main.innerHTML=`<div class="empty-state"><h1>Ficha no disponible</h1><p>${esc(e.message)}</p><a class="button small" href="/" data-route="/">Ir a la portada</a></div>`;return;}
+  const innova=f.project_id==='innova';
+  main.innerHTML=`<article class="resource-detail ficha-page project-page ${innova?'innova-theme':''}"><a class="back-link no-print" href="/${f.project_id}" data-route="/${f.project_id}">← Volver a ${esc(f.project_name)}</a>
+    <div class="eyebrow">${esc(f.project_name)} · ${esc(f.course)} · Cohorte ${esc(f.cohort)}</div><h1>${innova?'Matriz diagnóstica':'Ficha de Evidencia de la Innovación'}</h1>
+    <p class="no-print"><button class="button small" type="button" id="print-ficha">Imprimir o guardar como PDF</button> <span class="helper">Generada a partir de la entrega del ${esc(f.created_at.slice(0,10))} · ${esc(SUBMISSION_STATUS[f.status]||f.status)}</span></p>
+    <section class="detail-panel"><h2>Identificación</h2><dl class="field-list"><div><dt>Título</dt><dd>${esc(f.title)}</dd></div><div><dt>Equipo</dt><dd>${esc(f.team_name)}${f.section?' · Paralelo '+esc(f.section):''}</dd></div><div><dt>Integrantes</dt><dd>${f.members.map(esc).join(' · ')}</dd></div>
+      <div><dt>Video final</dt><dd><a href="${esc(f.video_url)}" target="_blank" rel="noopener noreferrer">${esc(f.video_url)}</a>${f.has_subtitles?' · con subtítulos':''}</dd></div></dl></section>
+    <section class="detail-panel"><h2>${innova?'Resumen del caso y de la cápsula':'Problema y solución propuesta'}</h2>${richText(f.summary)}</section>
+    <section class="detail-panel"><h2>${innova?'Del hallazgo al diagnóstico':'Fundamentación'}</h2><dl class="field-list">${f.fields.map(x=>`<div><dt>${esc(x.label)}</dt><dd>${richText(x.value)}</dd></div>`).join('')}</dl></section>
+    ${f.alternatives?.items?.length?`<section class="detail-panel"><h2>Alternativas evaluadas</h2>${alternativesTable(f.alternatives)}</section>`:(innova?'':'<section class="detail-panel"><h2>Alternativas evaluadas</h2><p class="helper">El equipo no registró la comparación de alternativas.</p></section>')}
+    ${f.model_filename?`<section class="detail-panel"><h2>Prototipo 3D</h2><p class="detail-content">Modelo adjunto: ${esc(f.model_filename)} (se ve y se gira en la ficha del repositorio).</p></section>`:''}
+    <section class="detail-panel"><h2>Declaración de uso de IA</h2><p class="detail-content">${esc(f.ai_declaration||'El equipo no declaró uso de IA.')}</p>
+      <p class="detail-content">Declaramos que el problema, la evidencia, el análisis y las conclusiones son del equipo, y que revisamos todo lo producido con IA.</p></section>
+    ${f.evidence_url||f.evidence_filename?`<section class="detail-panel"><h2>Material adicional</h2>${f.evidence_filename?`<p class="detail-content"><a href="/api/submissions/${f.id}/evidence">${esc(f.evidence_filename)}</a></p>`:''}${f.evidence_url?`<p class="detail-content"><a href="${esc(f.evidence_url)}" target="_blank" rel="noopener noreferrer">${esc(f.evidence_url)}</a></p>`:''}</section>`:''}
+  </article>`;
+  document.querySelector('#print-ficha').addEventListener('click',()=>window.print());
 }
 async function showTickets(projectId) {
   const root=document.querySelector('#project-content');
@@ -263,7 +350,7 @@ async function showTickets(projectId) {
   const box=root.querySelector('#ticket-items'), surveyBox=root.querySelector('#survey-items');
   api(`/api/my-surveys?project=${projectId}`).then(items=>{surveyBox.innerHTML=items.length?items.map(t=>`<article class="submission-status"><div><strong>${esc(t.title)}</strong><span class="helper"> · ${t.answered?'Respondida':t.open?'Abierta hasta '+new Date(t.closes_at*1000).toLocaleString('es-CL',{dateStyle:'short',timeStyle:'short'}):'Cerrada'}</span></div>${t.open&&!t.answered?`<a class="button small" href="/encuesta/${esc(t.code)}" data-route="/encuesta/${esc(t.code)}">Responder →</a>`:''}</article>`).join(''):'<p class="helper">No hay encuestas por ahora.</p>';}).catch(e=>{surveyBox.textContent=e.message;});
   try{const items=await api(`/api/my-tickets?project=${projectId}`);
-    box.innerHTML=items.length?items.map(t=>`<article class="submission-status"><div><strong>${esc(t.title)}</strong><span class="helper"> · ${t.answered?'Respondido':t.open?'Abierto hasta '+new Date(t.closes_at*1000).toLocaleString('es-CL',{dateStyle:'short',timeStyle:'short'}):'Cerrado'}</span></div>
+    box.innerHTML=items.length?items.map(t=>`<article class="submission-status"><div><strong>${t.kind==='previa'?'Preguntas previas · ':''}${esc(t.title)}</strong><span class="helper"> · ${t.answered?'Respondido':t.open?'Abierto hasta '+new Date(t.closes_at*1000).toLocaleString('es-CL',{dateStyle:'short',timeStyle:'short'}):'Cerrado'}</span></div>
       <div class="moderation-actions">${t.open&&!t.answered?`<a class="button small" href="/tiquete/${esc(t.code)}" data-route="/tiquete/${esc(t.code)}">Responder →</a>`:''}${t.feedback_url?`<a class="button secondary small" href="${esc(t.feedback_url)}" target="_blank" rel="noopener noreferrer">Retroalimentación de la docente ↗</a>`:''}</div></article>`).join(''):'<p class="helper">La docente aún no abre tiquetes en esta asignatura.</p>';
   }catch(e){box.textContent=e.message;}
 }
@@ -273,7 +360,7 @@ async function ticketPage(code) {
   try{t=await api(`/api/tickets/${encodeURIComponent(code)}`);}
   catch(e){main.innerHTML=`<div class="empty-state"><h1>Tiquete no disponible</h1><p>${esc(e.message)} Si aún no entras a la asignatura, abre la invitación del curso o escribe el código que te dio la docente en la portada.</p><a class="button small" href="/" data-route="/">Ir a la portada</a></div>`;return;}
   const p=PROJECTS[t.project_id], feedback=t.feedback_url?`<a class="button secondary small" href="${esc(t.feedback_url)}" target="_blank" rel="noopener noreferrer">Escuchar la retroalimentación ↗</a>`:'';
-  const head=`<div class="eyebrow">${esc(p.name)} · Tiquete de salida</div><h1>${esc(t.title)}</h1>`;
+  const head=`<div class="eyebrow">${esc(p.name)} · ${t.kind==='previa'?'Preguntas previas a la sesión':'Tiquete de salida'}</div><h1>${esc(t.title)}</h1>`;
   if(t.answered||!t.open){main.innerHTML=`<div class="resource-detail ${t.project_id==='innova'?'innova-theme':''}">${head}<div class="detail-panel"><p>${t.answered?'Ya respondiste este tiquete. ¡Gracias!':'Este tiquete ya cerró.'}</p>${feedback}<p><a class="text-button" href="/${t.project_id}" data-route="/${t.project_id}">Volver a ${esc(p.name)} →</a></p></div></div>`;return;}
   main.innerHTML=`<div class="resource-detail ${t.project_id==='innova'?'innova-theme':''}">${head}<p class="lead">Tu respuesta no lleva tu nombre ni correo. Basta con una o dos frases.</p>
     <form id="ticket-answer" class="detail-panel form-grid">${t.questions.map((q,i)=>`<div class="field"><label for="tq-${i}">${i+1}. ${esc(q)}</label><textarea id="tq-${i}" name="q${i}" maxlength="1500" rows="3" required></textarea></div>`).join('')}
@@ -305,7 +392,7 @@ const SUBMISSION_STATUS={review:'◷ En revisión docente',approved:'✓ Aprobad
 async function loadMySubmissions(projectId) {
   const box=document.querySelector('#my-submissions'); if(!box)return;
   try{const rows=await api(`/api/my-submissions?project=${projectId}`);
-    box.innerHTML=rows.length?`<section class="detail-panel"><h2>Tus entregas</h2>${rows.map(s=>`<article class="submission-status status-${esc(s.status)}"><div><strong>${esc(s.title)}</strong><span class="helper"> · ${esc(s.team_name)}${s.section?' · '+esc(s.section):''} · ${esc(s.created_at)}</span></div><span class="status-label">${esc(SUBMISSION_STATUS[s.status]||s.status)}</span>${s.review_note?`<p class="helper">Comentario docente: ${esc(s.review_note)}</p>`:''}${s.status==='rejected'?'<p class="helper">Pueden corregir y volver a enviar con el mismo nombre de equipo.</p>':''}</article>`).join('')}</section>`:'';
+    box.innerHTML=rows.length?`<section class="detail-panel"><h2>Tus entregas</h2>${rows.map(s=>`<article class="submission-status status-${esc(s.status)}"><div><strong>${esc(s.title)}</strong><span class="helper"> · ${esc(s.team_name)}${s.section?' · '+esc(s.section):''} · ${esc(s.created_at)}</span></div><span class="status-label">${esc(SUBMISSION_STATUS[s.status]||s.status)}</span>${s.review_note?`<p class="helper">Comentario docente: ${esc(s.review_note)}</p>`:''}${s.status==='rejected'?'<p class="helper">Pueden corregir y volver a enviar con el mismo nombre de equipo.</p>':''}<a class="text-button" href="/ficha/${Number(s.id)}" data-route="/ficha/${Number(s.id)}">Ver la ficha de evidencia generada →</a></article>`).join('')}</section>`:'';
   }catch{box.innerHTML='';}
 }
 function showForum(projectId) {
@@ -388,15 +475,18 @@ function detailPage(projectId, slug, reader=false) {
     root.innerHTML=`<span class="resource-category">${esc(resource.category)}</span><h1>${esc(resource.title)}</h1>${credits}<p class="lead">${esc(resource.summary)}</p><div class="tags">${resource.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</div>
       ${videoPanel(resource)}
       ${body}
+      ${resource.alternatives?.items?.length?`<section class="detail-panel"><h2>Alternativas evaluadas</h2>${alternativesTable(resource.alternatives)}</section>`:''}
+      ${resource.has_model&&!reader?`<section class="detail-panel"><h2>Prototipo 3D</h2><canvas class="stl-viewer" tabindex="0" role="img" aria-label="Modelo 3D del prototipo. Arrastra o usa las flechas para girarlo."></canvas><p class="helper">Arrastra para girarlo (o usa las flechas del teclado). <a href="/api/submissions/${Number(resource.source_submission_id)}/model" download>Descargar STL ↧</a></p></section>`:''}
       ${reader?'':`
       ${resource.quiz_count?'<section class="detail-panel"><h2>Preguntas de control</h2><div id="detail-quiz"><p class="helper">Cargando…</p></div></section>':''}
-      ${student?`<section class="detail-panel"><h2>Ficha de evidencia</h2><a class="button small" href="/api/submissions/${Number(resource.source_submission_id)}/evidence">Descargar ficha del equipo ↧</a></section>`:''}
+      ${student?`<section class="detail-panel"><h2>Ficha de evidencia</h2><div class="moderation-actions"><a class="button small" href="/ficha/${Number(resource.source_submission_id)}" data-route="/ficha/${Number(resource.source_submission_id)}">Ver la ficha generada →</a>${resource.has_evidence?`<a class="button secondary small" href="/api/submissions/${Number(resource.source_submission_id)}/evidence">Material adicional ↧</a>`:''}</div></section>`:''}
       ${resource.has_file?`<section class="detail-panel"><h2>Archivo del material</h2><a class="button small" href="/api/projects/${projectId}/resources/${encodeURIComponent(resource.slug)}/file">Descargar ${esc(resource.file_filename||'archivo del curso')} ↧</a></section>`:''}
       <section class="detail-panel"><h2>Foro de esta ficha</h2><div id="detail-comments"><p class="helper">Cargando comentarios…</p></div></section>
       ${student?'<section class="detail-panel"><h2>Coevaluación entre pares</h2><div id="detail-peer"><p class="helper">Cargando…</p></div></section>':''}`}`;
     if(reader) return;
     mountDiscussion(document.querySelector('#detail-comments'),projectId,resource);
     if(resource.quiz_count) mountQuiz(document.querySelector('#detail-quiz'),resource);
+    if(resource.has_model) mountStlViewer(root.querySelector('.stl-viewer'),`/api/submissions/${Number(resource.source_submission_id)}/model`);
     if(student) mountPeer(document.querySelector('#detail-peer'),resource);
   }).catch(e=>document.querySelector('#detail-container').innerHTML=`<div class="empty-state">${esc(e.message)}</div>`);
 }
@@ -436,7 +526,12 @@ async function moderatorPage() {
     ${accessCodesPanel()}
     ${ticketsPanel()}
     ${surveysPanel()}
-    <section class="detail-panel resource-detail"><div class="section-head"><h2>Indicadores para el informe</h2><label><span class="visually-hidden">Asignatura</span><select id="ind-project" class="select">${projectOptions()}</select></label></div><p class="helper">Lo que la propuesta promete medir, calculado con lo que ya registra la plataforma. El plazo de entrega se configura con PUCV_INCENTIVA_DEADLINE / PUCV_INNOVA_DEADLINE (AAAA-MM-DD).</p><div id="indicators" class="helper">Cargando…</div><a class="button secondary small" id="ind-csv" href="#" download>Descargar indicadores (CSV) ↧</a></section>
+    <section class="detail-panel resource-detail"><div class="section-head"><h2>Indicadores para el informe</h2><label><span class="visually-hidden">Asignatura</span><select id="ind-project" class="select">${projectOptions()}</select></label></div><p class="helper">Lo que la propuesta promete medir, calculado con lo que ya registra la plataforma. El plazo de entrega se configura con PUCV_INCENTIVA_DEADLINE / PUCV_INNOVA_DEADLINE (AAAA-MM-DD).</p><label class="inline-field"><span>Cohorte</span><select id="ind-cohort" class="select cohort-select"></select></label><div id="indicators" class="helper">Cargando…</div><a class="button secondary small" id="ind-csv" href="#" download>Descargar indicadores (CSV) ↧</a></section>
+    <section class="detail-panel resource-detail"><h2>Informe final y modo proyección</h2><p class="helper">El informe reúne indicadores y gráficos para los informes de Incentiva e Innova; se imprime o guarda en PDF. El modo proyección muestra los trabajos publicados uno tras otro, con temporizador y un QR para que el curso coevalúe en vivo.</p>
+      <div class="join-row"><label class="visually-hidden" for="rp-project">Asignatura</label><select id="rp-project" class="select">${projectOptions()}</select><label class="visually-hidden" for="rp-cohort">Cohorte</label><select id="rp-cohort" class="select cohort-select"></select><div class="moderation-actions"><button class="button small" type="button" id="open-report">Abrir informe →</button><button class="button secondary small" type="button" id="open-projection">Modo proyección →</button></div></div></section>
+    <section class="detail-panel resource-detail"><div class="section-head"><h2>Seguimiento por equipo</h2><div class="moderation-actions"><label class="visually-hidden" for="tr-project">Asignatura</label><select id="tr-project" class="select">${projectOptions()}</select><label class="visually-hidden" for="tr-cohort">Cohorte</label><select id="tr-cohort" class="select cohort-select"></select></div></div><p class="helper">Quién ya está ligado a una entrega (como quien la envió o con su correo en «Integrantes») y en qué estado está cada equipo.</p><div id="tracking" class="helper">Cargando…</div></section>
+    <section class="detail-panel resource-detail"><h2>Cohortes</h2><p class="helper">Cada semestre es una cohorte. Abrir una nueva no borra nada: lo anterior queda archivado y visible en el catálogo (con filtro por cohorte), y los indicadores se calculan por cohorte. Los códigos del curso se desactivan para que crees los nuevos.</p><div id="cohorts" class="helper">Cargando…</div>
+      ${user.role==='admin'?'<form id="cohort-open" class="join-row"><label for="co-name">Nueva cohorte</label><input id="co-name" maxlength="20" placeholder="2027-1" required><button class="button secondary small" type="submit">Abrir cohorte</button></form>':''}</section>
     <div id="moderation-content" class="loading">Cargando pendientes…</div>
     <section class="detail-panel resource-detail"><div class="section-head"><h2>Coevaluación entre pares</h2><a class="button secondary small" href="/api/admin/peer-reviews.csv" download>Descargar todo (CSV) ↧</a></div><p class="helper">Promedios por ficha (1 a 4) con la rúbrica de cada asignatura. El CSV incluye quién evaluó, para revisar la calidad de los comentarios.</p><div id="peer-summary" class="helper">Cargando…</div></section>
     <section class="detail-panel resource-detail"><div class="section-head"><h2>Integrantes con acceso</h2><span class="pill" id="members-count"></span></div><div id="members-list" class="helper">Cargando…</div></section>
@@ -446,7 +541,7 @@ async function moderatorPage() {
   const toc=document.createElement('nav'); toc.className='admin-toc'; toc.setAttribute('aria-label','Secciones del panel');
   const headings=[...main.querySelectorAll(':scope > section > h2, :scope > section > .section-head > h2')];
   const options=(start,end)=>headings.slice(start,end).map((h,i)=>`<option value="${start+i}">${esc(h.textContent)}</option>`).join('');
-  toc.innerHTML=`<label for="admin-jump">Ir directamente a</label><select id="admin-jump" class="select"><option value="" selected>Elige una tarea del panel</option><optgroup label="Preparar la asignatura">${options(0,5)}</optgroup><optgroup label="Seguimiento del curso">${options(5,8)}<option value="moderation">Revisión pendiente</option></optgroup>${user.role==='admin'?`<optgroup label="Administración del sitio">${options(8,headings.length)}</optgroup>`:''}</select><button class="button secondary small" type="button" id="admin-jump-go">Ir</button>`;
+  toc.innerHTML=`<label for="admin-jump">Ir directamente a</label><select id="admin-jump" class="select"><option value="" selected>Elige una tarea del panel</option><optgroup label="Preparar la asignatura">${options(0,5)}</optgroup><optgroup label="Seguimiento del curso">${options(5,11)}<option value="moderation">Revisión pendiente</option></optgroup>${user.role==='admin'?`<optgroup label="Administración del sitio">${options(11,headings.length)}</optgroup>`:''}</select><button class="button secondary small" type="button" id="admin-jump-go">Ir</button>`;
   toc.addEventListener('click',e=>{if(e.target.id!=='admin-jump-go')return;const value=document.querySelector('#admin-jump').value;if(value==='')return;const target=value==='moderation'?document.querySelector('#moderation-content'):headings[Number(value)];target.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});});
   main.querySelector('.lead').after(toc);
   bindAccessCodes();
@@ -457,16 +552,16 @@ async function moderatorPage() {
   bindTickets();
   loadPeerSummary();
   bindSurveys();
-  bindIndicators();
+  loadCohorts().then(()=>{bindIndicators();bindTracking();bindReportLinks();});
   if(user.role==='admin'){bindStaff();bindPrivacy();}
   if(user.role==='admin') loadBackups();
   const uploadForm=document.querySelector('#resource-upload-form');
   uploadForm.addEventListener('submit',async event=>{event.preventDefault();const button=uploadForm.querySelector('button');const error=document.querySelector('#resource-upload-error');const file=document.querySelector('#r-file').files[0], content=document.querySelector('#r-content').value;if(!file&&!content.trim()){error.textContent='Escribe el texto del material o adjunta un archivo.';return;}if(file&&file.size>8*1024*1024){error.textContent='El archivo debe pesar como máximo 8 MB.';return;}button.disabled=true;error.textContent='Guardando…';try{const result=await api('/api/admin/resources',{method:'POST',body:JSON.stringify({project_id:document.querySelector('#r-project').value,title:document.querySelector('#r-title').value,category:document.querySelector('#r-category').value,summary:document.querySelector('#r-summary').value,tags:document.querySelector('#r-tags').value,content,status:document.querySelector('#r-draft').checked?'draft':'published',filename:file?.name||'',file_base64:file?await fileToBase64(file):''})});notify(result.message);uploadForm.reset();error.textContent='';resourceCache={};loadMaterials();}catch(ex){error.textContent=ex.message;}finally{button.disabled=false;}});
   try {
     const pending=await api('/api/admin/pending'), root=document.querySelector('#moderation-content');
-    const accessRequests=pending.access_requests.map(r=>`<article class="moderation-card"><div class="resource-top"><span class="resource-category ${r.project_id==='innova'?'clay-chip':'forest-chip'}">${esc(PROJECTS[r.project_id].name)}</span><span class="helper">${esc(r.email)}</span></div><h2>${esc(r.display_name)} solicita acceso</h2><div class="moderation-actions"><button class="button small" data-review="access_request" data-id="${r.id}" data-decision="approve">Autorizar</button><button class="button secondary small" data-review="access_request" data-id="${r.id}" data-decision="reject">Rechazar</button></div></article>`).join('');
-    const submissions=pending.submissions.map(s=>`<article class="moderation-card"><div class="resource-top"><span class="resource-category ${s.project_id==='innova'?'clay-chip':'forest-chip'}">${esc(PROJECTS[s.project_id].name)}</span><span class="helper">${esc(s.team_name)}${s.section?' · '+esc(s.section):''} · ${esc(s.email)}</span></div><h2>${esc(s.title)}</h2>${s.members.length?`<p class="helper">Integrantes: ${s.members.map(esc).join(' · ')}</p>`:''}<p>${esc(s.summary)}</p>${s.fields.length?`<dl class="field-list compact">${s.fields.map(f=>`<div><dt>${esc(f.label)}</dt><dd>${esc(f.value)}</dd></div>`).join('')}</dl>`:''}${s.video_url?`<p class="helper">Video único (máx. 5 min): <a href="${esc(s.video_url)}" target="_blank" rel="noopener noreferrer">Abrir video ↗</a></p>`:''}${s.evidence_url?`<p class="helper">Ficha: <a href="${esc(s.evidence_url)}" target="_blank" rel="noopener noreferrer">Abrir ficha ↗</a></p>`:''}${s.evidence_storage_key?`<p><a class="button secondary small" href="/api/submissions/${Number(s.id)}/evidence">Descargar ficha adjunta ↧</a></p>`:''}<p class="helper">El equipo confirma que tiene permiso para los recursos y las imágenes o voces identificables que incluyó; la difusión posterior requiere autorización aparte.</p>${s.ai_declaration?`<p class="helper">Declaración de IA: ${esc(s.ai_declaration)}</p>`:'<p class="helper">Sin declaración de uso de IA.</p>'}<div class="field"><label for="note-${s.id}">Comentario para el equipo si se devuelve (opcional)</label><textarea id="note-${s.id}" maxlength="2000" rows="2"></textarea></div><div class="moderation-actions"><button class="button small" data-review="submission" data-id="${s.id}" data-decision="publish">Aprobar y publicar</button><button class="button secondary small" data-review="submission" data-id="${s.id}" data-decision="reject">Devolver</button></div></article>`).join('');
-    const comments=pending.comments.map(c=>`<article class="moderation-card"><div class="resource-top"><span class="resource-category ${c.project_id==='innova'?'clay-chip':'forest-chip'}">${esc(PROJECTS[c.project_id].name)}</span><span class="helper">${esc(c.display_name)} · ${esc(c.email)}</span></div><h2>${c.parent_id?'Respuesta':'Comentario'} en: ${esc(c.resource_title)}${c.badge==='equipo'?' <span class="comment-badge">Equipo autor</span>':''}</h2><p>${esc(c.body)}</p><div class="moderation-actions"><button class="button small" data-review="comment" data-id="${c.id}" data-decision="publish">Publicar</button><button class="button secondary small" data-review="comment" data-id="${c.id}" data-decision="hide">Ocultar</button></div></article>`).join('');
+    const accessRequests=pending.access_requests.map(r=>`<article class="moderation-card"><div class="resource-top"><span class="resource-category ${r.project_id==='innova'?'plum-chip':'forest-chip'}">${esc(PROJECTS[r.project_id].name)}</span><span class="helper">${esc(r.email)}</span></div><h2>${esc(r.display_name)} solicita acceso</h2><div class="moderation-actions"><button class="button small" data-review="access_request" data-id="${r.id}" data-decision="approve">Autorizar</button><button class="button secondary small" data-review="access_request" data-id="${r.id}" data-decision="reject">Rechazar</button></div></article>`).join('');
+    const submissions=pending.submissions.map(s=>`<article class="moderation-card"><div class="resource-top"><span class="resource-category ${s.project_id==='innova'?'plum-chip':'forest-chip'}">${esc(PROJECTS[s.project_id].name)}</span><span class="helper">${esc(s.team_name)}${s.section?' · '+esc(s.section):''} · ${esc(s.email)}</span></div><h2>${esc(s.title)}</h2>${s.members.length?`<p class="helper">Integrantes: ${s.members.map(esc).join(' · ')}</p>`:''}<p>${esc(s.summary)}</p>${s.fields.length?`<dl class="field-list compact">${s.fields.map(f=>`<div><dt>${esc(f.label)}</dt><dd>${esc(f.value)}</dd></div>`).join('')}</dl>`:''}${s.video_url?`<p class="helper">Video único (máx. 5 min): <a href="${esc(s.video_url)}" target="_blank" rel="noopener noreferrer">Abrir video ↗</a></p>`:''}${s.evidence_url?`<p class="helper">Ficha: <a href="${esc(s.evidence_url)}" target="_blank" rel="noopener noreferrer">Abrir ficha ↗</a></p>`:''}${s.evidence_storage_key?`<p><a class="button secondary small" href="/api/submissions/${Number(s.id)}/evidence">Descargar ficha adjunta ↧</a></p>`:''}${s.alternatives?.items?.length?`<h3>Alternativas evaluadas</h3>${alternativesTable(s.alternatives)}`:''}${s.has_model?`<p class="helper">Modelo 3D adjunto: <a href="/api/submissions/${Number(s.id)}/model" download>descargar STL</a></p>`:''}<p><a class="text-button" href="/ficha/${Number(s.id)}" data-route="/ficha/${Number(s.id)}">Ver la ficha de evidencia generada →</a></p><p class="helper">El equipo confirma que tiene permiso para los recursos y las imágenes o voces identificables que incluyó; la difusión posterior requiere autorización aparte.</p>${s.ai_declaration?`<p class="helper">Declaración de IA: ${esc(s.ai_declaration)}</p>`:'<p class="helper">Sin declaración de uso de IA.</p>'}<div class="field"><label for="note-${s.id}">Comentario para el equipo si se devuelve (opcional)</label><textarea id="note-${s.id}" maxlength="2000" rows="2"></textarea></div><div class="moderation-actions"><button class="button small" data-review="submission" data-id="${s.id}" data-decision="publish">Aprobar y publicar</button><button class="button secondary small" data-review="submission" data-id="${s.id}" data-decision="reject">Devolver</button></div></article>`).join('');
+    const comments=pending.comments.map(c=>`<article class="moderation-card"><div class="resource-top"><span class="resource-category ${c.project_id==='innova'?'plum-chip':'forest-chip'}">${esc(PROJECTS[c.project_id].name)}</span><span class="helper">${esc(c.display_name)} · ${esc(c.email)}</span></div><h2>${c.parent_id?'Respuesta':'Comentario'} en: ${esc(c.resource_title)}${c.badge==='equipo'?' <span class="comment-badge">Equipo autor</span>':''}</h2><p>${esc(c.body)}</p><div class="moderation-actions"><button class="button small" data-review="comment" data-id="${c.id}" data-decision="publish">Publicar</button><button class="button secondary small" data-review="comment" data-id="${c.id}" data-decision="hide">Ocultar</button></div></article>`).join('');
     root.className='moderation-list';
     root.innerHTML=`<section><div class="section-head"><h2>Solicitudes de acceso</h2><span class="pill">${pending.access_requests.length} pendientes</span></div>${accessRequests||'<div class="empty-state">No hay solicitudes de acceso por revisar.</div>'}</section><section><div class="section-head"><h2>Entregas</h2><span class="pill">${pending.submissions.length} pendientes</span></div>${submissions||'<div class="empty-state">No hay entregas por revisar.</div>'}</section><section><div class="section-head"><h2>Comentarios</h2><span class="pill">${pending.comments.length} pendientes</span></div>${comments||'<div class="empty-state">No hay comentarios por revisar.</div>'}</section>`;
     root.addEventListener('click',async e=>{const button=e.target.closest('[data-review]');if(!button)return;button.disabled=true;try{await api('/api/admin/review',{method:'POST',body:JSON.stringify({kind:button.dataset.review,id:Number(button.dataset.id),decision:button.dataset.decision,note:document.querySelector(`#note-${button.dataset.id}`)?.value||''})});notify('Revisión guardada.');moderatorPage();}catch(ex){notify(ex.message);button.disabled=false;}});
@@ -537,7 +632,7 @@ async function loadMaterials() {
   const box=document.querySelector('#materials-list'); if(!box)return;
   try{const items=await api('/api/admin/resources');
     document.querySelector('#materials-count').textContent=`${items.filter(r=>r.status==='published').length} publicados · ${items.filter(r=>r.status!=='published').length} retirados`;
-    box.innerHTML=items.length?items.map(r=>{const live=r.status==='published';return `<details class="material-item${live?'':' retired'}"><summary><span class="resource-category ${r.project_id==='innova'?'clay-chip':'forest-chip'}">${esc(PROJECTS[r.project_id].name)}</span><strong>${esc(r.title)}</strong><span class="status-label">${live?'Publicado':'Borrador o retirado'}</span></summary>
+    box.innerHTML=items.length?items.map(r=>{const live=r.status==='published';return `<details class="material-item${live?'':' retired'}"><summary><span class="resource-category ${r.project_id==='innova'?'plum-chip':'forest-chip'}">${esc(PROJECTS[r.project_id].name)}</span><strong>${esc(r.title)}</strong><span class="status-label">${live?'Publicado':'Borrador o retirado'}</span></summary>
       <form class="form-grid" data-material="${r.id}" data-status="${esc(r.status)}">
         <div class="field"><label for="m-title-${r.id}">Título</label><input id="m-title-${r.id}" name="title" required maxlength="180" value="${esc(r.title)}"></div>
         <div class="field"><label for="m-category-${r.id}">Tipo de material</label><input id="m-category-${r.id}" name="category" required maxlength="100" value="${esc(r.category)}"></div>
@@ -571,9 +666,10 @@ function quizStatsBlock(stats) {
 }
 function ticketsPanel() {
   const first=managedProjects[0], questions=projectConfig[first]?.ticket_questions||[];
-  return `<section class="detail-panel resource-detail"><h2>Tiquetes de salida</h2><p class="helper">Al cierre de cada sesión, proyecta el QR: el curso responde las tres preguntas estándar en 5 minutos sin escribir su nombre. Descarga el CSV para agrupar las dudas y deja aquí el enlace al audio de retroalimentación.</p>
+  return `<section class="detail-panel resource-detail"><h2>Tiquetes de salida y preguntas previas</h2><p class="helper">Al cierre de cada sesión, proyecta el QR: el curso responde las tres preguntas estándar en 5 minutos sin escribir su nombre. Las preguntas previas se envían antes de la clase (aula invertida) para llegar con las dudas identificadas. En «Ver respuestas» puedes ponerle una categoría a cada duda: el panel calcula la duda dominante.</p>
     <form id="ticket-form" class="form-grid">
-      <div class="field"><label for="tk-project">Asignatura</label><select id="tk-project" class="select">${projectOptions()}</select></div>
+      <div class="code-columns"><div class="field"><label for="tk-project">Asignatura</label><select id="tk-project" class="select">${projectOptions()}</select></div>
+      <div class="field"><label for="tk-kind">Tipo</label><select id="tk-kind" class="select"><option value="salida">Tiquete de salida (al cierre)</option><option value="previa">Preguntas previas (antes de la sesión)</option></select></div></div>
       <div class="field"><label for="tk-title">Sesión</label><input id="tk-title" maxlength="120" required placeholder="Fase 1 · sesión del 9 de noviembre"></div>
       <div class="field"><label for="tk-hours">Abierto durante (horas)</label><input id="tk-hours" type="number" min="1" max="336" value="24"></div>
       <details class="code-panel"><summary>Preguntas (las tres estándar del proyecto)</summary>${[0,1,2].map(i=>`<div class="field"><label for="tk-q${i}">Pregunta ${i+1}</label><textarea id="tk-q${i}" rows="2" maxlength="400">${esc(questions[i]||'')}</textarea></div>`).join('')}</details>
@@ -594,7 +690,7 @@ let ticketCache=[];
 async function loadTickets() {
   const box=document.querySelector('#ticket-list'); if(!box)return;
   try{ticketCache=await api('/api/admin/tickets');
-    box.innerHTML=ticketCache.length?ticketCache.map(t=>`<details class="material-item${t.open?'':' retired'}"><summary><span class="resource-category ${t.project_id==='innova'?'clay-chip':'forest-chip'}">${esc(PROJECTS[t.project_id].name)}</span><strong>${esc(t.title)}</strong><span class="status-label">${t.answers} respuestas · ${t.open?'abierto':'cerrado'}</span></summary>
+    box.innerHTML=ticketCache.length?ticketCache.map(t=>`<details class="material-item${t.open?'':' retired'}"><summary><span class="resource-category ${t.project_id==='innova'?'plum-chip':'forest-chip'}">${esc(PROJECTS[t.project_id].name)}</span><strong>${t.kind==='previa'?'Previas · ':''}${esc(t.title)}</strong><span class="status-label">${t.answers} respuestas · ${t.open?'abierto':'cerrado'}</span></summary>
       <div class="form-grid ticket-body"><p class="helper">Código <code>${esc(t.code)}</code> · ${esc(t.url)}</p>
         <div class="moderation-actions"><button class="button small" type="button" data-qr="${t.id}">Mostrar QR</button><button class="button secondary small" type="button" data-answers="${t.id}">Ver respuestas</button><a class="button secondary small" href="/api/admin/tickets/${t.id}/responses.csv" download>CSV ↧</a></div>
         <div class="ticket-answers" id="ticket-answers-${t.id}"></div>
@@ -603,24 +699,127 @@ async function loadTickets() {
   }catch(ex){box.textContent=ex.message;}
 }
 function bindTickets() {
-  const form=document.querySelector('#ticket-form'), project=document.querySelector('#tk-project');
-  project.addEventListener('change',()=>{(projectConfig[project.value]?.ticket_questions||[]).forEach((q,i)=>{document.querySelector(`#tk-q${i}`).value=q;});});
+  const form=document.querySelector('#ticket-form'), project=document.querySelector('#tk-project'), kind=document.querySelector('#tk-kind');
+  const fillQuestions=()=>{const c=projectConfig[project.value]||{};(kind.value==='previa'?c.pre_questions:c.ticket_questions||[]).forEach((q,i)=>{document.querySelector(`#tk-q${i}`).value=q;});};
+  project.addEventListener('change',fillQuestions); kind.addEventListener('change',fillQuestions);
   form.addEventListener('submit',async e=>{e.preventDefault();const error=document.querySelector('#tk-error');error.textContent='';
-    try{const r=await api('/api/admin/tickets',{method:'POST',body:JSON.stringify({project_id:project.value,title:document.querySelector('#tk-title').value,hours:document.querySelector('#tk-hours').value,questions:[0,1,2].map(i=>document.querySelector(`#tk-q${i}`).value)})});
+    try{const r=await api('/api/admin/tickets',{method:'POST',body:JSON.stringify({project_id:project.value,kind:kind.value,title:document.querySelector('#tk-title').value,hours:document.querySelector('#tk-hours').value,questions:[0,1,2].map(i=>document.querySelector(`#tk-q${i}`).value)})});
       document.querySelector('#tk-title').value='';await loadTickets();const created=ticketCache.find(t=>t.code===r.code);if(created)showQr(created);}
     catch(ex){error.textContent=ex.message;}});
   const list=document.querySelector('#ticket-list');
   list.addEventListener('click',async e=>{const qrButton=e.target.closest('[data-qr]'), answersButton=e.target.closest('[data-answers]');
     if(qrButton) showQr(ticketCache.find(t=>t.id===Number(qrButton.dataset.qr)));
     if(answersButton){const box=document.querySelector(`#ticket-answers-${answersButton.dataset.answers}`);
-      try{const data=await api(`/api/admin/tickets/${answersButton.dataset.answers}/responses`);
-        box.innerHTML=data.answers.length?data.questions.map((q,i)=>`<div class="ticket-question"><strong>${i+1}. ${esc(q)}</strong><ul>${data.answers.map(a=>`<li>${esc(a[i]||'')}</li>`).join('')}</ul></div>`).join(''):'<p class="helper">Todavía no hay respuestas.</p>';}
-      catch(ex){box.textContent=ex.message;}}});
+      loadTicketResponses(Number(answersButton.dataset.answers));}});
+  list.addEventListener('change',async e=>{const input=e.target.closest('[data-tag-answer]');if(!input)return;
+    try{await api(`/api/admin/tickets/${input.dataset.ticket}/tag`,{method:'POST',body:JSON.stringify({answer_id:input.dataset.tagAnswer,question:Number(input.dataset.q),tag:input.value})});
+      loadTicketResponses(Number(input.dataset.ticket),{question:input.dataset.q,answer:input.dataset.tagAnswer});}
+    catch(ex){notify(ex.message);}});
   list.addEventListener('submit',async e=>{const f=e.target.closest('[data-ticket]');if(!f)return;e.preventDefault();
     const ticket=ticketCache.find(t=>t.id===Number(f.dataset.ticket)), active=e.submitter?.dataset.active!==undefined?e.submitter.dataset.active==='1':Boolean(ticket.active);
     try{await api('/api/admin/tickets/update',{method:'POST',body:JSON.stringify({id:ticket.id,feedback_url:f.elements.feedback_url.value,active})});notify('Tiquete actualizado.');loadTickets();}
     catch(ex){notify(ex.message);}});
   loadTickets();
+}
+// Teacher-side binning of exit-ticket answers: a category per answer, counts, the dominant doubt and frequent words.
+async function loadTicketResponses(ticketId, keepFocus) {
+  const box=document.querySelector(`#ticket-answers-${ticketId}`); if(!box)return;
+  try{const data=await api(`/api/admin/tickets/${ticketId}/responses`);
+    if(!data.answers.length){box.innerHTML='<p class="helper">Todavía no hay respuestas.</p>';return;}
+    box.innerHTML=data.questions.map((q,i)=>{const sum=data.summary[i]||{tags:[],keywords:[]};
+      return `<div class="ticket-question"><strong>${i+1}. ${esc(q)}</strong>
+        <p class="helper">${sum.dominant?`Duda dominante: <b>${esc(sum.dominant)}</b> · `:''}${sum.tags.length?sum.tags.map(t=>`${esc(t.tag)} (${t.count})`).join(' · '):'Aún sin categorías.'}</p>
+        ${sum.keywords.length?`<p class="helper">Palabras frecuentes: ${sum.keywords.map(k=>`<span class="tag">${esc(k.word)} · ${k.count}</span>`).join(' ')}</p>`:''}
+        <datalist id="tags-${ticketId}-${i}">${sum.tags.map(t=>`<option value="${esc(t.tag)}">`).join('')}</datalist>
+        <ul class="tag-answers">${data.answers.map(a=>`<li><span>${esc(a.answers[i]||'')}</span><label class="visually-hidden" for="tag-${a.id}-${i}">Categoría</label><input id="tag-${a.id}-${i}" class="tag-input" list="tags-${ticketId}-${i}" maxlength="60" placeholder="Categoría" value="${esc(a.tags[i]||'')}" data-tag-answer="${esc(a.id)}" data-q="${i}" data-ticket="${ticketId}"></li>`).join('')}</ul></div>`;}).join('');
+    if(keepFocus){const next=box.querySelector(`#tag-${CSS.escape(keepFocus.answer)}-${keepFocus.question}`)?.closest('li')?.nextElementSibling?.querySelector('input');if(next)next.focus();}
+  }catch(ex){box.textContent=ex.message;}
+}
+let cohortList=[], currentCohortName='';
+async function loadCohorts() {
+  const box=document.querySelector('#cohorts');
+  try{const d=await api('/api/admin/cohorts'); cohortList=d.cohorts; currentCohortName=d.current;
+    document.querySelectorAll('.cohort-select').forEach(sel=>{sel.innerHTML=[...cohortList].reverse().map(c=>`<option value="${esc(c.name)}"${c.name===d.current?' selected':''}>${esc(c.name)}${c.name===d.current?' (actual)':''}</option>`).join('');});
+    if(box) box.innerHTML=`<table class="code-table"><thead><tr><th>Cohorte</th><th>Desde</th><th>Estudiantes con acceso</th><th>Entregas</th></tr></thead><tbody>${[...cohortList].reverse().map(c=>`<tr><td>${esc(c.name)}${c.name===d.current?' <span class="status-label">actual</span>':''}</td><td>${c.started_at.startsWith('1970')?'inicio':esc(c.started_at.slice(0,10))}</td><td>${c.members}</td><td>${c.submissions}</td></tr>`).join('')}</tbody></table>`;
+  }catch(ex){if(box)box.textContent=ex.message;}
+  const form=document.querySelector('#cohort-open');
+  if(form&&!form.dataset.bound){form.dataset.bound='1';form.addEventListener('submit',async e=>{e.preventDefault();const name=document.querySelector('#co-name').value.trim();
+    if(!confirm(`¿Abrir la cohorte «${name}»? Los códigos del curso actuales se desactivarán; nada se borra.`))return;
+    try{const r=await api('/api/admin/cohorts',{method:'POST',body:JSON.stringify({name})});notify(r.message);form.reset();await loadCohorts();}catch(ex){notify(ex.message);}});}
+}
+function bindTracking() {
+  const project=document.querySelector('#tr-project'), cohort=document.querySelector('#tr-cohort'), box=document.querySelector('#tracking');
+  const load=async()=>{try{const d=await api(`/api/admin/tracking?project=${project.value}&cohort=${encodeURIComponent(cohort.value)}`);
+    const without=d.people.filter(x=>!x.status);
+    box.innerHTML=`<table class="code-table"><thead><tr><th>Paralelo</th><th>Con acceso</th><th>Ligados a una entrega</th><th>Equipos</th><th>Publicados</th><th>Devueltos</th></tr></thead><tbody>${d.summary.map(r=>`<tr><td>${esc(r.section)}</td><td>${r.members}</td><td>${r.linked} de ${r.members}</td><td>${r.teams}</td><td>${r.published}</td><td>${r.returned}</td></tr>`).join('')||'<tr><td colspan="6">Sin datos en esta cohorte.</td></tr>'}</tbody></table>
+      ${d.teams.length?`<h3>Equipos</h3><table class="code-table"><thead><tr><th>Equipo</th><th>Paralelo</th><th>Estado</th><th>Enviado</th></tr></thead><tbody>${d.teams.map(t=>`<tr class="status-${esc(t.status)}"><td>${esc(t.team)}</td><td>${esc(t.section||'—')}</td><td><span class="status-label">${esc(SUBMISSION_STATUS[t.status]||t.status)}</span></td><td>${esc(t.created_at.slice(0,10))}</td></tr>`).join('')}</tbody></table>`:''}
+      <details class="code-panel"><summary>${without.length} ${without.length===1?'persona':'personas'} sin entrega asociada</summary><p class="helper">Puede que integren un equipo que no escribió su correo en «Integrantes».</p><ul>${without.map(x=>`<li>${esc(x.name)} · ${esc(x.email)}${x.section?' · '+esc(x.section):''}</li>`).join('')}</ul></details>`;}
+    catch(ex){box.textContent=ex.message;}};
+  project.addEventListener('change',load); cohort.addEventListener('change',load); load();
+}
+function bindReportLinks() {
+  const project=document.querySelector('#rp-project'), cohort=document.querySelector('#rp-cohort');
+  document.querySelector('#open-report').addEventListener('click',()=>go(`/informe/${project.value}?cohorte=${encodeURIComponent(cohort.value)}`));
+  document.querySelector('#open-projection').addEventListener('click',()=>go(`/proyeccion/${project.value}?cohorte=${encodeURIComponent(cohort.value)}`));
+}
+// Horizontal bars, one or two series. Values are written on each bar (few bars), and the data stays available as a table.
+function barChart(rows, {series, max, format=v=>String(v), label}) {
+  const rowH=series.length*22+14, top=series.length>1?28:6, labelW=310, width=800, plotW=width-labelW-60, height=top+rows.length*rowH;
+  const legend=series.length>1?series.map((s,i)=>`<rect x="${labelW+i*150}" y="4" width="12" height="12" rx="3" fill="var(${s.color})"/><text x="${labelW+18+i*150}" y="14" class="chart-legend">${esc(s.name)}</text>`).join(''):'';
+  const bars=rows.map((r,i)=>{const y=top+i*rowH;
+    const name=r.label.length>40?r.label.slice(0,39)+'…':r.label;
+    return `<text x="${labelW-10}" y="${y+rowH/2+4}" text-anchor="end" class="chart-label"><title>${esc(r.label)}</title>${esc(name)}</text>`+r.values.map((v,j)=>{if(v===null||v===undefined)return '';
+      const w=Math.max(2,plotW*v/max), by=y+7+j*22;
+      return `<g><title>${esc(r.label)} · ${esc(series[j].name)}: ${esc(format(v))}</title><rect x="${labelW}" y="${by}" width="${w}" height="18" rx="4" fill="var(${series[j].color})"/><text x="${labelW+w+6}" y="${by+13}" class="chart-value">${esc(format(v))}</text></g>`;}).join('');}).join('');
+  const table=`<details class="chart-data"><summary>Ver los datos en tabla</summary><table class="code-table"><thead><tr><th>${esc(label)}</th>${series.map(s=>`<th>${esc(s.name)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.label)}</td>${r.values.map(v=>`<td>${v===null||v===undefined?'—':esc(format(v))}</td>`).join('')}</tr>`).join('')}</tbody></table></details>`;
+  return `<svg class="bar-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(label)}">${legend}${bars}</svg>${table}`;
+}
+async function reportPage(projectId) {
+  const params=new URLSearchParams(location.search), cohort=params.get('cohorte')||'';
+  main.innerHTML='<div class="resource-detail"><div class="loading">Preparando el informe…</div></div>';
+  let r;
+  try{r=await api(`/api/admin/report?project=${projectId}&cohort=${encodeURIComponent(cohort)}`);}
+  catch(e){main.innerHTML=`<div class="empty-state"><h1>Informe no disponible</h1><p>${esc(e.message)}</p></div>`;return;}
+  const innova=projectId==='innova', pct=v=>`${Math.round(v*100)}%`;
+  const status=[['published','✓ Publicadas'],['review','◷ En revisión'],['rejected','↺ Devueltas']];
+  let group='';
+  main.innerHTML=`<article class="resource-detail report-page project-page ${innova?'innova-theme':''}"><a class="back-link no-print" href="/admin" data-route="/admin">← Volver al panel</a>
+    <div class="eyebrow">${esc(r.name)} · Cohorte ${esc(r.cohort)}</div><h1>Informe del proyecto</h1>
+    <p class="no-print"><button class="button small" type="button" id="print-report">Imprimir o guardar como PDF</button> <span class="helper">Generado el ${new Date().toLocaleDateString('es-CL')} con los datos del repositorio.</span></p>
+    <section class="detail-panel"><h2>Entregas</h2><div class="stat-row">${status.map(([k,l])=>`<div class="stat"><span class="stat-value">${r.statuses[k]||0}</span><span class="stat-label">${l}</span></div>`).join('')}</div>
+      ${r.by_section.length?barChart(r.by_section.map(x=>({label:x.section,values:[x.teams]})),{series:[{name:'Equipos con entrega',color:'--series-1'}],max:Math.max(...r.by_section.map(x=>x.teams),1),label:'Equipos con entrega por paralelo'}):''}</section>
+    ${r.kpsi.length?`<section class="detail-panel"><h2>KPSI: entrada y salida</h2><p class="helper">Promedio de autoevaluación por enunciado (1 a 4). Es percepción de dominio, no una medida de aprendizaje ni de eficacia.</p>${barChart(r.kpsi.map(x=>({label:x.text,values:[x.before,x.after]})),{series:[{name:'Entrada',color:'--series-1'},{name:'Salida',color:'--series-2'}],max:4,format:v=>v.toFixed(1),label:'Enunciado del KPSI'})}</section>`:''}
+    ${r.quiz.length?`<section class="detail-panel"><h2>Preguntas de control</h2>${barChart(r.quiz.map(x=>({label:`${x.title} (${x.respondents})`,values:[x.correct_share]})),{series:[{name:'Respuestas correctas',color:'--series-1'}],max:1,format:pct,label:'Ficha (personas que respondieron)'})}</section>`:''}
+    ${r.peer?`<section class="detail-panel"><h2>Coevaluación entre pares</h2><p class="helper">${r.peer.count} evaluaciones · promedio general ${r.peer.overall} de 4.</p>${barChart(r.peer.averages.map(a=>({label:a.label,values:[a.average]})),{series:[{name:'Promedio',color:'--series-1'}],max:4,format:v=>v.toFixed(2),label:'Criterio'})}</section>`:''}
+    ${r.doubts.length?`<section class="detail-panel"><h2>Dudas más frecuentes</h2><p class="helper">Categorías asignadas por la docente a las respuestas de tiquetes y preguntas previas.</p>${barChart(r.doubts.map(d=>({label:d.tag,values:[d.n]})),{series:[{name:'Respuestas',color:'--series-1'}],max:Math.max(...r.doubts.map(d=>d.n)),label:'Categoría'})}</section>`:''}
+    <section class="detail-panel"><h2>Indicadores</h2><table class="code-table"><tbody>${r.indicators.map(x=>{const head=x.group!==group?`<tr><th colspan="2">${esc(x.group)}</th></tr>`:'';group=x.group;return `${head}<tr><td>${esc(x.label)}</td><td><b>${esc(x.value)}</b></td></tr>`;}).join('')}</tbody></table></section>
+  </article>`;
+  document.querySelector('#print-report').addEventListener('click',()=>window.print());
+}
+async function projectionPage(projectId) {
+  const params=new URLSearchParams(location.search), cohort=params.get('cohorte')||'';
+  let items=[], index=0, section=params.get('paralelo')||'', remaining=300, timer=null;
+  const sections=projectConfig[projectId]?.sections||[];
+  const load=async()=>{items=await api(`/api/admin/projection?project=${projectId}&cohort=${encodeURIComponent(cohort)}&section=${encodeURIComponent(section)}`);index=0;draw();};
+  const tick=()=>{remaining=Math.max(0,remaining-1);const t=document.querySelector('#proj-timer');if(t){t.textContent=`${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`;t.classList.toggle('timer-ending',remaining<=30);}if(!remaining){clearInterval(timer);timer=null;}};
+  const draw=()=>{clearInterval(timer);timer=null;remaining=300;const it=items[index];
+    main.innerHTML=`<div class="projection project-page ${projectId==='innova'?'innova-theme':''}"><div class="projection-bar no-print"><a class="back-link" href="/admin" data-route="/admin">← Panel</a>
+      ${sections.length?`<label><span class="visually-hidden">Paralelo</span><select id="proj-section" class="select"><option value="">Todos los paralelos</option>${sections.map(x=>`<option${x===section?' selected':''}>${esc(x)}</option>`).join('')}</select></label>`:''}
+      <span class="helper">${items.length?`${index+1} de ${items.length}`:'Sin trabajos publicados'}</span><button class="button secondary small" type="button" id="proj-full">Pantalla completa</button></div>
+      ${it?`<div class="projection-main"><div><div class="eyebrow">${esc(it.team_name)}${it.section?' · '+esc(it.section):''}</div><h1>${esc(it.title)}</h1>
+        ${it.embed_url?`<div class="video-frame"><iframe src="${esc(it.embed_url)}" title="Video: ${esc(it.title)}" allow="encrypted-media; picture-in-picture; fullscreen"></iframe></div>`:`<p><a class="button" href="${esc(it.media_url)}" target="_blank" rel="noopener noreferrer">Abrir el video ↗</a></p>`}</div>
+        <aside class="projection-side"><div class="timer" id="proj-timer" aria-live="off">5:00</div><div class="moderation-actions"><button class="button small" type="button" id="proj-start">Iniciar 5 min</button><button class="button secondary small" type="button" id="proj-reset">Reiniciar</button></div>
+          <img src="/api/admin/qr.svg?path=${encodeURIComponent(it.path)}" alt="Código QR para coevaluar este trabajo"><p class="helper">Escanea para coevaluar este trabajo</p>
+          <div class="moderation-actions"><button class="button secondary small" type="button" id="proj-prev"${index===0?' disabled':''}>← Anterior</button><button class="button small" type="button" id="proj-next"${index>=items.length-1?' disabled':''}>Siguiente →</button></div></aside></div>`
+        :'<div class="empty-state">No hay trabajos publicados en esta cohorte o paralelo.</div>'}</div>`;
+    document.querySelector('#proj-section')?.addEventListener('change',e=>{section=e.target.value;load();});
+    document.querySelector('#proj-full')?.addEventListener('click',()=>document.documentElement.requestFullscreen?.());
+    document.querySelector('#proj-start')?.addEventListener('click',()=>{if(!timer)timer=setInterval(tick,1000);});
+    document.querySelector('#proj-reset')?.addEventListener('click',()=>{clearInterval(timer);timer=null;remaining=301;tick();});
+    document.querySelector('#proj-prev')?.addEventListener('click',()=>{index--;draw();});
+    document.querySelector('#proj-next')?.addEventListener('click',()=>{index++;draw();});};
+  document.onkeydown=e=>{if(!location.pathname.startsWith('/proyeccion/'))return;if(e.target.closest('input,select,textarea'))return;if(e.key==='ArrowRight'&&index<items.length-1){index++;draw();}if(e.key==='ArrowLeft'&&index>0){index--;draw();}};
+  try{await load();}catch(e){main.innerHTML=`<div class="empty-state"><h1>Modo proyección no disponible</h1><p>${esc(e.message)}</p></div>`;}
 }
 function surveysPanel() {
   const first=managedProjects[0];
@@ -639,7 +838,7 @@ let surveyCache=[];
 async function loadSurveys() {
   const box=document.querySelector('#survey-list'); if(!box)return;
   try{surveyCache=await api('/api/admin/surveys');
-    box.innerHTML=surveyCache.length?surveyCache.map(t=>`<details class="material-item${t.open?'':' retired'}"><summary><span class="resource-category ${t.project_id==='innova'?'clay-chip':'forest-chip'}">${esc(PROJECTS[t.project_id].name)}</span><strong>${esc(t.title)}</strong><span class="status-label">${t.answers} respuestas · ${t.open?'abierta':'cerrada'}</span></summary>
+    box.innerHTML=surveyCache.length?surveyCache.map(t=>`<details class="material-item${t.open?'':' retired'}"><summary><span class="resource-category ${t.project_id==='innova'?'plum-chip':'forest-chip'}">${esc(PROJECTS[t.project_id].name)}</span><strong>${esc(t.title)}</strong><span class="status-label">${t.answers} respuestas · ${t.open?'abierta':'cerrada'}</span></summary>
       <div class="form-grid ticket-body"><p class="helper">${t.kind==='kpsi'?'KPSI':'Percepción'} · ${esc(t.moment)} · código <code>${esc(t.code)}</code></p>
         <div class="moderation-actions"><button class="button small" type="button" data-survey-qr="${t.id}">Mostrar QR</button><button class="button secondary small" type="button" data-survey-results="${t.id}">Ver resultados</button><a class="button secondary small" href="/api/admin/surveys/${t.id}/responses.csv" download>CSV ↧</a><button class="button secondary small" type="button" data-survey-toggle="${t.id}" data-active="${t.active?0:1}">${t.active?'Cerrar':'Reabrir'}</button></div>
         <div id="survey-results-${t.id}"></div></div></details>`).join(''):'<p class="helper">Aún no hay encuestas.</p>';
@@ -666,12 +865,12 @@ function bindSurveys() {
   loadSurveys();
 }
 function bindIndicators() {
-  const select=document.querySelector('#ind-project'), box=document.querySelector('#indicators'), link=document.querySelector('#ind-csv');
-  const load=async()=>{link.href=`/api/admin/indicators.csv?project=${select.value}`;
-    try{const rows=await api(`/api/admin/indicators?project=${select.value}`);let group='';
+  const select=document.querySelector('#ind-project'), cohort=document.querySelector('#ind-cohort'), box=document.querySelector('#indicators'), link=document.querySelector('#ind-csv');
+  const load=async()=>{const q=`project=${select.value}&cohort=${encodeURIComponent(cohort.value)}`;link.href=`/api/admin/indicators.csv?${q}`;
+    try{const rows=await api(`/api/admin/indicators?${q}`);let group='';
       box.innerHTML=`<table class="code-table"><tbody>${rows.map(r=>{const head=r.group!==group?`<tr><th colspan="2">${esc(r.group)}</th></tr>`:'';group=r.group;return `${head}<tr><td>${esc(r.label)}</td><td><b>${esc(r.value)}</b></td></tr>`;}).join('')}</tbody></table>`;}
     catch(ex){box.textContent=ex.message;}};
-  select.addEventListener('change',load); load();
+  select.addEventListener('change',load); cohort.addEventListener('change',load); load();
 }
 function staffPanel() {
   return `<section class="detail-panel resource-detail"><h2>Equipo docente</h2><p class="helper">Asigna quién revisa cada asignatura sin tocar la configuración del servidor. El cambio rige de inmediato.</p>
@@ -841,9 +1040,12 @@ async function render() {
   if(path==='/ayuda') return helpPage();
   const kit=path.match(/^\/kit(?:\/(incentiva|innova))?$/);
   if(kit) return kitPage(kit[1]||'incentiva');
-  const ticket=path.match(/^\/(tiquete|encuesta)\/([A-Za-z0-9-]{4,12})$/);
+  const ticket=path.match(/^\/(tiquete|encuesta)\/([A-Za-z0-9-]{4,12})$/), ficha=path.match(/^\/ficha\/(\d+)$/);
   if(!user){ if(ticket){try{sessionStorage.setItem('afterLogin',path);}catch{}} return login(); }
   if(ticket) return ticket[1]==='tiquete'?ticketPage(ticket[2]):surveyPage(ticket[2]);
+  if(ficha) return fichaPage(Number(ficha[1]));
+  const managerPage=path.match(/^\/(informe|proyeccion)\/(incentiva|innova)$/);
+  if(managerPage) return managerPage[1]==='informe'?reportPage(managerPage[2]):projectionPage(managerPage[2]);
   if(path==='/') return home();
   if(path==='/admin') return moderatorPage();
   const detail=path.match(/^\/(incentiva|innova)\/recurso\/([^/]+)$/);
