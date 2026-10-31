@@ -1,25 +1,25 @@
 # Paleta de colores accesible
 
-Evaluación y rediseño de los colores del repositorio. La revisión es del 31 de octubre de 2026. Los valores están en `static/styles.css`, en el bloque `:root`.
+Evaluación de contraste de tokens y propuesta visual del repositorio. Revisión del 31 de octubre de 2026. Los valores están en `static/styles.css`, bloque `:root`. El resultado numérico de tokens no sustituye una auditoría completa de cada vista y estado.
 
 ## 1. Estado del arte: qué se exige hoy
 
 | Referencia | Qué pide | Cómo se aplicó |
 |---|---|---|
-| **WCAG 2.2, criterio 1.4.3** (nivel AA) | Contraste de 4,5:1 para texto normal y de 3:1 para texto grande (desde 24 px, o desde 18,7 px en negrita). | Es el mínimo para todo el texto. |
+| **WCAG 2.2, criterio 1.4.3** (nivel AA) | Contraste de 4,5:1 para texto normal y de 3:1 para texto grande (desde 24 px, o desde 18,7 px en negrita). | Se usa como objetivo de diseño para texto normal; debe verificarse cada combinación que aparezca en las vistas reales. |
 | **WCAG 2.2, criterio 1.4.6** (nivel AAA) | 7:1 para texto normal. | Se cumple en el texto principal (14:1 en modo claro y 15,9:1 en oscuro). |
 | **WCAG 2.2, criterio 1.4.11** (nivel AA) | 3:1 para los componentes de interfaz: bordes de campos, controles y el indicador de foco. | Los bordes de los campos pasaron de 1,34:1 a 3,33–3,73:1. |
-| **WCAG 2.2, criterios 2.4.7 y 2.4.13** | El foco debe ser visible; el 2.4.13 (nivel AAA) pide además un cambio de al menos 3:1 entre el estado con foco y sin foco. | El anillo de foco tiene 3 px y llega a 4,4–5,1:1 en modo claro y a 8–10:1 en oscuro. |
+| **WCAG 2.2, criterios 2.4.7 y 2.4.13** | El foco debe ser visible. El 2.4.13 (nivel AAA) incluye condiciones geométricas y de contraste adicionales, que no quedan probadas por medir solo el color del anillo. | El anillo está definido en CSS y se midió su contraste con los fondos principales; el cumplimiento íntegro de 2.4.13 queda pendiente de probar en cada control y tema. |
 | **WCAG 2.2, criterio 1.4.1** | El color no puede ser el único medio para transmitir información. | Los estados de las entregas llevan ícono y texto, además del color. |
-| **APCA** (método candidato de WCAG 3, todavía en borrador) | Contraste perceptual que depende del tamaño y del peso de la letra. Valores de referencia: Lc 90 preferido y Lc 75 mínimo para texto de lectura continua, y Lc 60 para texto grande o etiquetas. | Se usó como segundo criterio. Sirvió para detectar el texto auxiliar de 10–12 px que WCAG 2 dejaba pasar pero que se lee mal. |
-| **Simulación de daltonismo** (Machado, Oliveira y Fernandes, 2009) | Modelo fisiológico de protanopia, deuteranopia y tritanopia. Las guías recomiendan variar la luminosidad, no solo el tono, y revisar en escala de grises. | Se midió en cada caso la separación entre los colores de Incentiva e Innova, y entre los de los estados. |
+| **APCA** (método candidato de WCAG 3, todavía en borrador) | Contraste perceptual que depende del tamaño y del peso de la letra. Valores de referencia: Lc 90 preferido y Lc 75 mínimo para texto de lectura continua, y Lc 60 para texto grande o etiquetas. | Se usó como segundo criterio experimental para revisar el texto auxiliar; no reemplaza los requisitos WCAG ni una prueba con usuarios. |
+| **Simulación de daltonismo** (Machado, Oliveira y Fernandes, 2009) | Modelo fisiológico de protanopia, deuteranopia y tritanopia. Las guías recomiendan variar la luminosidad, no solo el tono, y revisar en escala de grises. | Se revisó la separación entre los acentos y entre estados. La prueba detecta combinaciones que requieren texto o iconografía además del color; no certifica usabilidad cromática. |
 | **Preferencias del sistema** (`prefers-color-scheme`, `prefers-contrast`, `forced-colors`) | Respetar el modo oscuro, el pedido de más contraste y los temas de alto contraste de Windows. | Están implementadas las tres. |
 
-No se encontró un manual de marca público de la PUCV con sus códigos de color, así que la paleta no depende de él. Conserva la identidad que ya tenía el sitio (azul para Incentiva, rojo vino para Innova, dorado como acento y fondo marfil), con los tonos ajustados hasta cumplir las normas. Si más adelante se obtienen los colores oficiales, basta con cambiar los tokens `--blue` y `--wine` y volver a correr la verificación de la sección 5.
+La interfaz usa marfil cálido y verde hoja como base. Incentiva se marca con verde bosque; Innova con arcilla suave, que hace contraste con la identidad general y evoca trabajo de laboratorio. Nombre, número y texto acompañan siempre los acentos para que el color no cargue solo con la distinción. No son valores corporativos ni sustituyen el logotipo PUCV. El verde y la arcilla son decisiones de interfaz para los cursos, no colores oficiales de marca. [Normas gráficas PUCV 2023](https://pucv.cl/uuaa/site/docs/20240822/20240822181659/normas_graficas_2023.pdf).
 
 ## 2. Diagnóstico de la versión anterior
 
-Se auditó la página renderizada: cada texto visible contra su fondo efectivo, en 11 vistas.
+La documentación anterior reportaba una auditoría renderizada en 11 vistas, pero no hay un registro reproducible de páginas, estados, capturas ni resultados por vista en la carpeta. Se conserva como antecedente del trabajo de Claudia, no como certificación verificada.
 
 - **23 combinaciones de texto bajo 4,5:1.** Las peores eran el texto de ayuda gris (3,3–3,7:1), el pie de página (3,67:1), el tipo de entrega en las tarjetas (4,0:1) y la etiqueta de Innova (4,47:1).
 - **Bordes de campos con 1,34–1,41:1** frente al mínimo de 3:1, en todos los formularios (89 casos solo en el panel docente).
@@ -32,17 +32,17 @@ Se auditó la página renderizada: cada texto visible contra su fondo efectivo, 
 
 | Token | Uso | Claro | Oscuro |
 |---|---|---|---|
-| `--canvas` | Fondo de página | `#f5f2eb` | `#121417` |
-| `--surface` | Tarjetas y paneles | `#ffffff` | `#1b1f24` |
-| `--surface-2` | Paneles internos | `#f7f5ef` | `#22272d` |
-| `--ink` | Texto principal | `#1f2328` | `#eceef0` |
-| `--ink-2` | Texto secundario | `#434a53` | `#d6dade` |
-| `--ink-3` | Ayuda y metadatos | `#4f565e` | `#c9ced4` |
-| `--control` | Bordes de campos | `#7f858c` | `#7c848d` |
-| `--focus` | Anillo de foco | `#b35200` | `#ffb057` |
-| `--blue` / `--blue-soft` | Incentiva | `#24507f` / `#e8eef5` | `#b8d5f6` / `#1a2a3b` |
-| `--wine` / `--wine-soft` | Innova | `#8c3539` / `#f5e9e8` | `#f6c4c6` / `#3a2225` |
-| `--success` / `--danger` / `--warning` | Estados | `#22603a` / `#9a2a24` / `#6b470b` | `#a3dcb3` / `#f7b4ad` / `#f5d08a` |
+| `--canvas` | Fondo marfil de página | `#f3f0e5` | `#141a16` |
+| `--surface` | Tarjetas y paneles | `#fffef9` | `#1d241f` |
+| `--surface-2` | Paneles internos | `#f5f2e9` | `#242b25` |
+| `--ink` | Texto principal | `#252b25` | `#f0f1e9` |
+| `--ink-2` | Texto secundario | `#3d473f` | `#dae0d9` |
+| `--ink-3` | Ayuda y metadatos | `#4a554c` | `#c4cec4` |
+| `--control` | Bordes de campos | `#697469` | `#89968b` |
+| `--focus` | Anillo de foco | `#92551e` | `#e0ad6a` |
+| `--forest` / `--forest-soft` | Incentiva · verde hoja | `#315d42` / `#e6ede3` | `#c4dac1` / `#26342a` |
+| `--clay` / `--clay-soft` | Innova · arcilla | `#8b4c38` / `#f1e7df` | `#efc9b8` / `#392a25` |
+| `--success` / `--danger` / `--warning` | Estados | `#2d603d` / `#933c32` / `#6c531b` | `#add5ad` / `#f0b4a9` / `#e6cd8c` |
 
 Además de la paleta:
 
@@ -52,28 +52,21 @@ Además de la paleta:
 
 ## 4. Resultados
 
-**Verificación numérica de los tokens:** 54 pares de uso real, 27 por tema. Todos cumplen WCAG 2.2 AA y el umbral APCA de su uso.
+**Verificación numérica de los tokens:** 54 pares de uso, 27 por tema. El script local calculó cero fallas en ese conjunto bajo sus umbrales. Es una comprobación de tokens, no una declaración de conformidad de toda la aplicación.
 
-**Auditoría de las páginas renderizadas** (unas 290 combinaciones de texto y fondo por tema, en 10 vistas):
+**Verificación ejecutada en esta revisión:** `python3 herramientas/verificar_paleta.py` reportó cero fallas en los pares de tokens incluidos en `herramientas/paleta.json` (modo claro y oscuro). Este chequeo sí es reproducible. No demuestra por sí solo que cada página, estado, control, video incrustado o texto dinámico cumpla WCAG.
 
-| | Antes | Ahora (claro) | Ahora (oscuro) |
-|---|---|---|---|
-| Fallas de contraste WCAG 2.2 AA | 23 | **0** | **0** |
-| Peor contraste de texto | 3,3:1 | **6,2:1** | **8,4:1** |
-| Bordes de campos bajo 3:1 | 89 o más | **0** | **0** |
-| Tamaño mínimo de texto | 10,5 px | 11,5 px (etiquetas en mayúsculas y negrita) | 11,5 px |
-
-En modo oscuro quedan algunas etiquetas de 12 px con Lc 73–75, justo en el umbral APCA recomendado. Es la meta preferente de un estándar todavía en borrador, no un mínimo exigido.
+La auditoría de página `herramientas/auditoria_contraste.js` se debe ejecutar en el navegador sobre las vistas reales de estudiante, docente, privacidad y formularios, en ambos temas. El archivo registra solo la página que está abierta; no automatiza las diez vistas mencionadas por la documentación previa. El resultado por vista queda pendiente.
 
 **Separación de colores** (ΔE CIE76; desde 20 se distinguen con claridad):
 
 | Par | Visión normal | Protanopia | Deuteranopia | Tritanopia |
 |---|---|---|---|---|
-| Incentiva / Innova (claro) | 60 | 38 | 55 | 75 |
-| Incentiva / Innova (oscuro) | 32 | 21 | 28 | 42 |
+| Incentiva / Innova (claro) | 49 | 5 | 18 | 58 |
+| Incentiva / Innova (oscuro) | 23 | 3 | 6 | 29 |
 | Publicada / Devuelta (claro) | 77 | **9** | 22 | 90 |
 
-Verde y rojo se confunden con protanopia. Por eso los estados no dependen del color: llevan ícono (✓, ↺, ◷) y texto. Los dos proyectos también se identifican por su nombre y número («01 · Incentiva», «02 · Innova»), no solo por el color.
+Algunos tonos de proyecto pueden acercarse bajo simulaciones de deficiencia cromática, sobre todo protanopia. Por eso las asignaturas también se identifican con su nombre y número («01 · Incentiva», «02 · Innova»), y los estados llevan ícono (✓, ↺, ◷) y texto además del color.
 
 ## 5. Cómo verificarla de nuevo
 

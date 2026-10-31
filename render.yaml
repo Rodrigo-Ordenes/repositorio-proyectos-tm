@@ -44,6 +44,10 @@ services:
         sync: false
       - key: PUCV_EMAIL_DOMAINS
         value: mail.pucv.cl,pucv.cl
+      - key: PUCV_INCENTIVA_SECTIONS
+        sync: false
+      - key: PUCV_INNOVA_SECTIONS
+        sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET

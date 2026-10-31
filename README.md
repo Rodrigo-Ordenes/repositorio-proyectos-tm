@@ -9,7 +9,7 @@ Aplicación web única para mantener Incentiva e Innova bajo un solo dominio, co
 | `python3 server.py` | Iniciar el sitio |
 | `python3 server.py diagnostico` | Revisar la configuración antes de publicar (sale con error si falta algo crítico) |
 | `python3 server.py codigo correo@pucv.cl [incentiva\|innova] [días]` | Código personal de ingreso sin Google ni correo |
-| `python3 server.py borradores-desafios` | Cargar los 6 desafíos de Incentiva como borradores ocultos (no duplica) |
+| `python3 server.py borradores-desafios` | Reponer desafíos que falten como borradores (no duplica; el arranque ya crea los seis) |
 | `python3 server.py respaldo [archivo.zip]` / `verificar-respaldo archivo` | Respaldo completo y su verificación |
 | `python3 server.py actualizar-casos [carpeta]` | Regenerar `seeds/casos_innova.json` desde los .docx del curso |
 
@@ -26,7 +26,7 @@ El sitio sirve estos cinco archivos en `/materiales/…` (no tienen datos person
 
 | Rol | Puede |
 |---|---|
-| Estudiante | Entrar con Google, código personal o código del curso; ver casos y desafíos; entregar el video y la ficha del equipo; comentar y responder en el foro; responder preguntas de control; coevaluar fichas de otros equipos; responder tiquetes y encuestas anónimas. |
+| Estudiante | Entrar con Google, código personal o código del curso; ver casos y desafíos; entregar el video y la ficha del equipo; comentar y responder en el foro; responder preguntas de control; coevaluar fichas de otros equipos; responder tiquetes y encuestas sin vincular el contenido con su nombre. |
 | Persona de otro curso (si `PUCV_OPEN_PROJECTS` incluye la asignatura) | Ver en modo lector los trabajos que sus equipos autorizaron para la vitrina. |
 | Docente de una asignatura | Todo lo anterior más: subir, editar y retirar materiales; códigos de acceso; revisar entregas y comentarios; preguntas de control y pregunta guía por ficha; tiquetes de salida con QR y CSV; encuestas con comparación entrada/salida; resultados de coevaluación; indicadores para el informe. |
 | Administración global | Todo, más el equipo docente por asignatura, solicitudes de datos personales (descargar o eliminar), cierre de cohorte y respaldos. |
@@ -40,7 +40,7 @@ El sitio sirve estos cinco archivos en `/materiales/…` (no tienen datos person
 3. Cuando termine el despliegue, abre la consola del servicio (*Shell*) y ejecuta:
    - `python3 server.py diagnostico` para revisar la configuración;
    - `python3 server.py codigo tu-correo@pucv.cl` para tu primer ingreso;
-   - `python3 server.py borradores-desafios` para cargar los desafíos de Incentiva.
+   - Los seis desafíos de Incentiva aparecen automáticamente como borradores para revisión docente.
 4. Para entrar con Google, sigue «Activar Google en 15 minutos» más abajo.
 
 ## Probar localmente
@@ -61,12 +61,12 @@ Con el modo demostración, entra desde «Modo de demostración local» con el co
 python3 server.py codigo estudiante@mail.pucv.cl incentiva 30   # código personal: entra con «Tengo un código de ingreso»
 ```
 
-Los códigos del curso (los que se proyectan en clase) se crean en el panel docente → «Acceso de estudiantes».
+Las invitaciones de curso se crean desde «Acceso de estudiantes» en el panel docente; copia el enlace para probar y elige el paralelo.
 
 ### Pruebas automáticas
 
 ```sh
-bash pruebas/ejecutar.sh            # todas las suites (unas 220 verificaciones)
+bash pruebas/ejecutar.sh            # todas las suites (225 verificaciones)
 bash pruebas/ejecutar.sh seguridad  # una sola suite
 ```
 
@@ -80,7 +80,7 @@ Cada suite levanta el servidor en el puerto 8766 con una base temporal que se bo
 | **Código de ingreso personal** | Nada externo. La docente los genera en el panel (pega correos → descarga CSV) o por consola: `python3 server.py codigo correo@pucv.cl [incentiva\|innova] [días]`. | Respaldo si Google falla o la universidad bloquea la app; primer ingreso de la administración. |
 | **Enlace por correo** (opcional) | Remitente SMTP (Gmail con contraseña de aplicación, Brevo, etc.). | Si se quiere ofrecer además del ingreso con Google. |
 
-Además, el **código del curso** (panel docente → «Acceso de estudiantes») permite que una persona ya identificada se una a la asignatura sin esperar aprobación manual: se proyecta en clase, tiene vigencia y máximo de usos, y se puede desactivar.
+Además, el **enlace de invitación del curso** (panel docente → «Acceso de estudiantes») permite que estudiantes con Google PUCV entren directamente a su asignatura. La docente define paralelo, vigencia y máximo de usos, copia el enlace y lo pega en Aula Virtual o un correo; lo puede desactivar. También puede mostrar el código en clase. Las personas que no puedan entrar con Google reciben un código personal. Comparte invitaciones solo en canales privados del curso.
 
 ### Activar Google en 15 minutos
 
@@ -135,11 +135,11 @@ También se admite `SMTP_SECURITY=ssl` (normalmente puerto 465). No usar SMTP si
 
 ## Roles y separación docente
 
-- `student`: solicita ingreso a una asignatura y, una vez aprobada, consulta sus materiales y entrega el trabajo de su equipo.
+- `student`: solicita acceso a una asignatura o se une con el código de curso que entrega la docente y entrega el trabajo de su equipo.
 - `editor`: responsable docente de una o ambas asignaturas; revisa únicamente los accesos, comentarios y entregas del proyecto que tiene asignado.
 - `admin`: administración técnica global.
 
-La administración global asigna docentes por asignatura desde el panel («Equipo docente»), con efecto inmediato. También se pueden fijar en el servidor con `PUCV_INCENTIVA_ADMINS` y `PUCV_INNOVA_ADMINS` (listas de correos separados por coma); en ese caso la persona debe volver a iniciar sesión. `PUCV_ADMIN_EMAILS` queda reservado a la administración global. La revisión docente está acotada en el servidor por proyecto, no solo escondida en la interfaz.
+Los códigos de curso habilitan acceso inmediato a quien ya verificó una cuenta PUCV; para mayor cierre, la docente puede aprobar solicitudes persona por persona. La administración global asigna docentes por asignatura desde el panel («Equipo docente»), con efecto inmediato. También se pueden fijar en el servidor con `PUCV_INCENTIVA_ADMINS` y `PUCV_INNOVA_ADMINS` (listas de correos separados por coma); en ese caso la persona debe volver a iniciar sesión. `PUCV_ADMIN_EMAILS` queda reservado a la administración global. La revisión docente está acotada en el servidor por proyecto, no solo escondida en la interfaz.
 
 ## Base de datos
 
@@ -159,9 +159,9 @@ SQLite simplifica el despliegue para un programa académico de un curso. Almacen
 ## Datos personales
 
 - `/privacidad` y `/consentimiento` (autorización de imagen y voz, imprimible) se abren sin iniciar sesión. Ambos textos son versión preliminar que debe validar la docente.
-- Tiquetes de salida y encuestas son anónimos: quién respondió y qué respondió se guardan en tablas separadas sin clave común.
+- Tiquetes de salida y encuestas guardan el contenido sin correo o nombre. La participación se registra en una tabla separada para limitar duplicados; no se promete anonimato certificado.
 - Panel → «Datos personales»: descargar en JSON todo lo que hay de una persona (derecho de acceso) o eliminarlo (anonimiza la cuenta, borra comentarios, coevaluaciones y entregas no publicadas, y quita su nombre de los trabajos publicados de su equipo).
-- **Cierre de cohorte** (al terminar el semestre): guarda antes un respaldo completo en el servidor, anonimiza todas las cuentas de estudiantes, borra entregas no publicadas y nombres de integrantes, y deja en el catálogo solo los trabajos autorizados para la vitrina.
+- **Cierre de cohorte** (al terminar el semestre): guarda antes un respaldo completo en el servidor, anonimiza las cuentas de estudiantes, borra entregas no publicadas y nombres de integrantes, y deja en el catálogo solo los trabajos autorizados para la vitrina. Los respaldos anteriores contienen datos y no se eliminan automáticamente.
 
 ## Despliegue sin datos personales
 
@@ -169,9 +169,9 @@ La carpeta del proyecto tiene material del curso con datos personales (respuesta
 
 ## Diseño
 
-Colores con tokens semánticos verificados para WCAG 2.2 AA (AAA en el texto principal) y APCA, con modo oscuro automático o manual (botón ◐), respeto de `prefers-contrast` y de los temas de alto contraste de Windows. El detalle, la investigación y las herramientas para volver a medir están en [PALETA_ACCESIBLE.md](PALETA_ACCESIBLE.md).
+Los tokens de color se verifican con los cálculos WCAG 2.2 y APCA; todavía se debe auditar cada vista real para afirmar conformidad completa. Incluye modo oscuro automático o manual (botón ◐), `prefers-contrast` y temas de alto contraste de Windows. El detalle, la investigación y las herramientas para volver a medir están en [PALETA_ACCESIBLE.md](PALETA_ACCESIBLE.md).
 
-La paleta usa los colores institucionales PUCV con tratamientos suaves: azul para Incentiva y navegación común, rojo vino para Innova, y dorado solo como acento. Las superficies marfil y los títulos serif dan un tono editorial universitario sin imitar el logotipo oficial. En pantalla grande las dos entradas aparecen juntas; en celular se apilan. El buscador y las tarjetas pertenecen a un solo proyecto por vez.
+La paleta usa marfil cálido y verde bosque como base, un acento de hoja para Incentiva y arcilla suave para Innova. Los títulos serif y las líneas finas dan un tono editorial relacionado con salud y territorio sin imitar el logotipo oficial. En pantalla grande las dos entradas aparecen juntas; en celular se apilan. El buscador y las tarjetas pertenecen a un solo proyecto por vez.
 
 ## Despliegue
 

@@ -23,7 +23,7 @@ Leer cada tarea tal cual, sin nombrar botones.
 | e | «Deja una pregunta al equipo autor de esta cápsula.» | El comentario queda enviado a revisión. |
 | f | «Responde las preguntas de control de esa ficha.» | Ve su puntaje y las explicaciones. |
 | g | «Coevalúa el trabajo de otro equipo.» | Ve «Coevaluación guardada». |
-| h | «Escanea el QR del tiquete de salida y respóndelo.» | Ve «Respuesta enviada de forma anónima». |
+| h | «Escanea el QR del tiquete de salida y respóndelo.» | Ve una confirmación de que su respuesta se recibió sin nombre o correo en el contenido. |
 | i | «Vuelve a la portada.» | Está en la portada. |
 
 Repetir b, e y i **solo con teclado** (Tab, Enter) con al menos una persona.

@@ -108,7 +108,7 @@ check "material solo texto como borrador" "$(req prof -d '{"project_id":"incenti
 check "borrador oculto a estudiantes" "$(req ana "$B/api/resources?project=incentiva" | grep -c 'Desafío nuevo')" "^0$"
 check "material sin texto ni archivo" "$(req prof -d '{"project_id":"incentiva","title":"x","category":"x","summary":"x"}' $B/api/admin/resources)" "\[400\]"
 python3 "$APP/server.py" borradores-desafios > "$S/drafts.txt"
-check "carga de los 6 borradores" "$(cat $S/drafts.txt)" "^6 borradores"
+check "desafíos ya sembrados al iniciar; CLI no duplica" "$(cat $S/drafts.txt)" "^0 borradores"
 check "borradores con categoría de desafío" "$(sqlite3 $S/repo.sqlite3 "select count(*) from resources where category like 'Desafío ·%' and status='draft'")" "^7$"
 
 # Removed admin loses the role without signing in again

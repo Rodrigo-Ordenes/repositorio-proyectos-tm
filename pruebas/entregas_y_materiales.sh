@@ -42,6 +42,11 @@ res=$(req ana "$B/api/resources?project=incentiva")
 check "ficha publicada con campos" "$res" '"label": "Resultado esperado e indicador"'
 check "ficha con paralelo y etiquetas" "$res" '"tags": \["Acceso rural", "Oftalmología"\]'
 check "ficha con IA declarada" "$res" '"ai_declaration": "Canva para títulos"'
+login brenda
+bio_code=$(req admin -d '{"project_id":"incentiva","section":"Bioanálisis","label":"Paralelo Bioanálisis","days":7}' $B/api/admin/join-codes)
+bio_code_value=$(echo "$bio_code" | python3 -c "import sys,json;print(json.loads(sys.stdin.read().rsplit(' [',1)[0])['code'])")
+req brenda -d "{\"code\":\"$bio_code_value\"}" $B/api/join > /dev/null
+check "mismo nombre de equipo en otro paralelo" "$(req brenda -d "{$base,\"section\":\"Bioanálisis\",\"members\":\"Brenda\",$fields}" $B/api/submissions)" "\[201\]"
 
 mats=$(req prof $B/api/admin/resources)
 check "editor ve solo su asignatura" "$(echo "$mats" | grep -c innova)" "^0$"

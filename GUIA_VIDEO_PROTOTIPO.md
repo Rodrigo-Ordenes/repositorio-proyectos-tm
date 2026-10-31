@@ -34,19 +34,34 @@ Los tiempos son orientativos; se pueden combinar las partes. El video debe conta
 
 **Innova en el Aula · Fundamentos de Diagnóstico Molecular.** Construir un video-pitch científico en torno a un caso simulado: hallazgo clínico, mecanismo o alteración molecular, conexión con la patología, propuesta diagnóstica o prototipo, controles/evidencia y resultado esperado. Integrar el modelo molecular o el prototipo 3D cuando aporte a la explicación. No revelar respuestas clínicas como si fueran orientación diagnóstica real.
 
-## Herramientas audiovisuales
+## Herramientas audiovisuales gratuitas y de prueba
 
-La caja de herramientas dentro de cada espacio del curso incluye los botones a los servicios oficiales. Los planes gratuitos, cupos de IA y condiciones de uso pueden cambiar; comprobar el plan y cualquier marca de agua antes de producir el video final.
+La página del proyecto ofrece botones directos. No necesitan comprar licencias ni IA para cumplir el trabajo. La lista distingue herramientas gratis permanentes de servicios que solo ofrecen créditos de prueba. Condiciones revisadas el 31 de octubre de 2026; confirmen el plan antes de producir, porque las empresas pueden cambiar sus límites.
 
-| Necesidad | Herramienta sugerida | Costo/consideración |
+| Para qué | Herramienta | Costo y consideración |
 |---|---|---|
-| Storyboard, escenas, títulos y animación sencilla | [Canva Video](https://www.canva.com/video-editor/) | Plan gratuito: MP4 hasta 1080p/30 min con elementos gratuitos. Los elementos premium pueden bloquear exportación o cobrar. |
-| Montar clips, voz, capturas y rótulos | [Clipchamp personal](https://app.clipchamp.com/) | Plan gratuito: exportación hasta 1080p; funciona en Edge/Chrome en equipos Windows, Mac, Linux y Chromebook. |
-| Animar gráficos, títulos o diseños | [Adobe Express](https://www.adobe.com/express/) | El plan gratis ofrece una cuota diaria limitada de generaciones IA; varias animaciones y ediciones manuales están disponibles sin consumir cuota. |
-| Edición de video e ideas/funciones generativas | [CapCut](https://www.capcut.com/tools) | La edición básica tiene plan gratuito. Algunas funciones IA y recursos pueden consumir créditos o requerir Pro. |
-| Crear un plano animado breve desde texto o imagen | [Pika](https://pika.art/) | Plan gratuito con créditos limitados; revisar costo del modo y duración antes de generar. |
-| Modelado o animación 3D | [Blender](https://www.blender.org/download/) | Gratis, abierto y multiplataforma; potente, pero conviene usarlo solo si el equipo ya tiene tiempo para aprenderlo. |
-| Prototipado 3D de Innova | [Fusion 360](https://www.autodesk.com/education/edu-software/fusion) | El curso incluye guía y videos. El acceso educativo depende de validar elegibilidad con Autodesk. |
+| Montar en navegador | [Clipchamp](https://clipchamp.com/en/pricing/) | El plan personal gratuito exporta hasta 1080p sin marca de agua; incluye subtítulos y funciones de edición asistidas por IA. Requiere cuenta Microsoft. Reemplacen cualquier recurso premium que bloquee la exportación. |
+| Diseñar escenas y títulos | [Canva Video](https://www.canva.com/video-editor/) | Exporta MP4 gratis hasta 1080p si el diseño usa elementos, imágenes, audio y fuentes gratuitas. Los recursos Pro pueden exigir pago. |
+| Editar varias pistas en un computador | [Kdenlive](https://kdenlive.org/) | Gratis y de código abierto para Windows, macOS y Linux. Incluye títulos, transiciones, animación de gráficos y herramientas de subtítulos. Los archivos se editan localmente. |
+| Grabar y limpiar la narración | [Audacity](https://www.audacityteam.org/download/) | Gratis, abierto y sin cuenta para editar audio en el computador. Útil para grabar una voz clara, reducir ruido y nivelar volumen. |
+| Diagramar el funcionamiento | [diagrams.net](https://app.diagrams.net/) | Herramienta gratuita para esquemas de flujo, pasos de una técnica, roles y controles; luego pueden grabar el diagrama mientras lo explican. |
+| Hacer un prototipo 3D sencillo | [Tinkercad](https://www.tinkercad.com/) | Modelado 3D gratuito en navegador y accesible para principiantes. Requiere conectividad y cuenta; no suban información personal. |
+| Crear animación 3D o una escena científica | [Blender](https://www.blender.org/features/) | Gratis y de código abierto, sin suscripción. Permite modelar, animar, renderizar y editar; requiere tiempo de aprendizaje y un computador capaz. Funciona localmente. |
+| Dibujar animación 2D cuadro a cuadro | [OpenToonz](https://opentoonz.github.io/e/) | Gratis y de código abierto. Da control creativo a dibujos propios, pero requiere aprender una interfaz de animación. Empiecen con pocos segundos. |
+| Revisar una licencia educativa de prototipado | [Fusion 360](https://www.autodesk.com/education/edu-software/fusion) | El curso cuenta con guía y videos. El acceso educativo depende de elegibilidad y condiciones de Autodesk; Tinkercad y Blender son alternativas gratuitas. |
+| Asistente de imágenes, texto y animación | [Adobe Express](https://helpx.adobe.com/express/web/ai-assistant/adobe-express-ai-assistant-faq.html) | El plan gratuito ofrece generaciones IA limitadas por día. El asistente IA funciona en escritorio, en inglés y se habilita gradualmente; no todas las cuentas lo tienen. |
+| Generar un plano corto con IA | [Runway](https://help.runwayml.com/hc/en-us/articles/50404627334547-Free-plan-details) | 125 créditos gratis por única vez, no mensuales; los videos gratuitos incluyen marca de agua. Úsenlo solo para experimentar con una escena. |
+| Generación de video opcional | [Pika](https://pika.art/pricing) | El plan gratuito actualmente tiene 0 créditos mensuales; se pueden explorar funciones, pero generar requiere comprar créditos. No ofrece licencia comercial en el plan gratuito. |
+| Explorar borradores visuales | [Luma Dream Machine](https://lumalabs.ai/learning-hub/payments-subscriptions) | Las funciones gratuitas son limitadas y las exportaciones completas pueden requerir pago. No planifiquen el video final alrededor de esta opción. |
+| Edición móvil y funciones automáticas | [CapCut](https://www.capcut.com/tools) | Herramientas disponibles y gratuitas dependen de la región y la cuenta; algunas funciones IA y recursos pueden requerir pago. Revisen antes de empezar. |
+
+### Elige una ruta de producción
+
+- **Solo celular, sin pagar:** papel y lápiz para el guion → maqueta, dibujos o stop-motion → grabación de celular → Clipchamp o el editor ya instalado → subtítulos y revisión final.
+- **Explicación con diagramas:** diagrams.net o Canva Free → grabar pantalla y narración → editar y subtitular en Clipchamp o Kdenlive.
+- **Animación 2D:** dibujos del equipo → OpenToonz → voz grabada en Audacity → montaje final en Kdenlive o Clipchamp.
+- **Prototipo 3D:** Tinkercad para empezar o Blender para más control → capturar el recorrido del modelo → narrar y montar. Fusion 360 solo si la cuenta educativa está habilitada.
+- **IA como apoyo breve:** crear un fondo, una transición o una visualización sencilla; integrar ese plano en el montaje editado por el equipo. No es necesario generar escenas para todo el video.
 
 ### Ideas que no requieren IA
 
@@ -60,11 +75,11 @@ La caja de herramientas dentro de cada espacio del curso incluye los botones a l
 
 La IA puede ayudar a generar un fondo, icono, transición o plano ilustrativo breve. La pregunta, el análisis, la selección de evidencia, la validación científica, la voz y la decisión sobre la propuesta pertenecen al equipo. Declaren qué herramienta usaron y para qué. Revisen errores, sesgos, derechos de autor y licencias de los recursos.
 
-Usen únicamente los casos simulados entregados para la actividad. No ingresen nombres, imágenes, fichas ni datos de pacientes reales en Canva, CapCut, Pika, Adobe u otros servicios externos. Si una herramienta retiene o publica el material, no suban información del curso que identifique a estudiantes o personas.
+Usen únicamente casos simulados. No ingresen nombres, imágenes, fichas, correos ni datos de pacientes reales en Canva, CapCut, Runway, Pika, Adobe u otros servicios externos. Revisen permisos, retención y visibilidad de cada plataforma. No es necesario mostrar rostros ni voces identificables: se puede narrar, hacer una voz colectiva o usar subtítulos.
 
 ## Reparto de roles sugerido
 
-Si el curso se organiza en 4–6 equipos de 6–7 personas, no hace falta que todas aparezcan frente a cámara: cada persona puede aportar en la investigación, diseño, modelado, narración, actuación, edición, revisión científica o subtítulos.
+Los equipos de 6–7 personas pueden repartir investigación, diseño, modelado, narración, actuación, edición, revisión científica y subtítulos. No hace falta que todas aparezcan frente a cámara; se puede acreditar el aporte de cada persona en la ficha o en los créditos.
 
 1. Investigación y guion: selecciona evidencia y revisa exactitud.
 2. Diseño/visualización: storyboard, maqueta, diagrama o prototipo.

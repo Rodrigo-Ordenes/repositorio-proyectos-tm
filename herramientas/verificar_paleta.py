@@ -42,13 +42,13 @@ for theme, t in P.items():
         ("ink", "canvas", 7, 90, "texto principal"), ("ink", "surface", 7, 90, "texto principal en tarjetas"),
         ("ink-2", "canvas", 4.5, 75, "texto secundario"), ("ink-2", "surface", 4.5, 75, "texto secundario"), ("ink-2", "surface-2", 4.5, 75, "texto secundario en paneles"),
         ("ink-3", "canvas", 4.5, 60, "ayuda y metadatos"), ("ink-3", "surface", 4.5, 60, "ayuda y metadatos"), ("ink-3", "surface-2", 4.5, 60, "ayuda en paneles"),
-        ("blue", "surface", 4.5, 75, "enlaces y acentos Incentiva"), ("blue", "blue-soft", 4.5, 60, "etiqueta Incentiva"), ("blue", "canvas", 4.5, 60, "pestaña activa"),
-        ("wine", "surface", 4.5, 75, "acentos Innova"), ("wine", "wine-soft", 4.5, 60, "etiqueta Innova"), ("wine", "canvas", 4.5, 60, "pestaña activa Innova"),
-        ("on-accent", "blue", 4.5, 75, "texto de botón Incentiva"), ("on-accent", "wine", 4.5, 75, "texto de botón Innova"),
+        ("forest", "surface", 4.5, 75, "enlaces y acentos Incentiva"), ("forest", "forest-soft", 4.5, 60, "etiqueta Incentiva"), ("forest", "canvas", 4.5, 60, "pestaña activa"),
+        ("clay", "surface", 4.5, 75, "acentos Innova"), ("clay", "clay-soft", 4.5, 60, "etiqueta Innova"), ("clay", "canvas", 4.5, 60, "pestaña activa Innova"),
+        ("on-accent", "forest", 4.5, 75, "texto de botón Incentiva"), ("on-accent", "clay", 4.5, 75, "texto de botón Innova"),
         ("success", "success-soft", 4.5, 60, "estado publicado"), ("danger", "danger-soft", 4.5, 60, "estado devuelto"), ("danger", "surface", 4.5, 60, "mensajes de error"),
         ("warning", "warning-soft", 4.5, 60, "avisos"), ("gold-text", "gold-soft", 4.5, 60, "pendiente"),
         ("control", "surface", 3, 0, "borde de campos (1.4.11)"), ("control", "canvas", 3, 0, "borde de campos sobre fondo"), ("control", "surface-2", 3, 0, "borde de campos en paneles"),
-        ("focus", "canvas", 3, 0, "anillo de foco"), ("focus", "surface", 3, 0, "anillo de foco"), ("focus", "blue-soft", 3, 0, "anillo de foco en zona Incentiva"),
+        ("focus", "canvas", 3, 0, "anillo de foco"), ("focus", "surface", 3, 0, "anillo de foco"), ("focus", "forest-soft", 3, 0, "anillo de foco en zona Incentiva"),
     ]
     for fg, bg, need, lc_need, use in pairs:
         r, lc = ratio(t[fg], t[bg]), abs(apca(t[fg], t[bg]))
@@ -57,7 +57,7 @@ for r in rows:
     print(("OK  " if r[-1] else "BAJO") + f" {r[0]:6} {r[1]:38} {r[4]} / {r[5]}  {r[6]:>5}:1 (≥{r[7]})  Lc {r[8]:>3} (≥{r[9]})")
 for theme, t in P.items():
     print(f"\n{theme}: separación Incentiva/Innova y estados (ΔE CIE76; ≥20 se distingue con claridad)")
-    for a, b in (("blue", "wine"), ("success", "danger")):
+    for a, b in (("forest", "clay"), ("success", "danger")):
         line = f"  {a}/{b}: normal ΔE {de(t[a], t[b]):.0f}"
         for name, m in MACHADO.items():
             line += f" · {name} {de(simulate(t[a], m), simulate(t[b], m)):.0f}"

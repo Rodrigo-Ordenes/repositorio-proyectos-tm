@@ -20,7 +20,13 @@ check "no expone otros archivos" "$(code '/materiales/~$triz-diagnostica-innova.
 check "sin salir de la carpeta" "$(code /materiales/../server.py)" "^404"
 check "sin servir el código" "$(code /server.py)" "^404"
 check "sin servir la carpeta del curso" "$(code '/Innova%20en%20el%20aula%202S%202026/Tiquetes%20de%20Salida.docx')" "^404"
+check "selectores CSS sin espacios tras los dos puntos" "$(python3 -c "
+import re,sys
+css=open(sys.argv[1]).read()
+bad=[m.group(1).strip() for m in re.finditer(r'(?:^|})\\s*([^{}@]+?)\\{', css) if re.search(r'[\\w\\])]: +[:a-z(]', m.group(1))]
+print(len(bad), bad[:3])" "$APP/static/styles.css")" "^0 \\[\\]"
 check "CSP del reproductor y foco" "$(curl -s -D - -o /dev/null $B/)" "frame-src https://www.youtube-nocookie.com"
+check "seis desafíos listos como borradores al iniciar" "$(sqlite3 "$S/repo.sqlite3" "select count(*) from resources where project_id='incentiva' and category like 'Desafío ·%' and status='draft'")" "^6$"
 kill $PID; wait $PID 2>/dev/null
 check "diagnóstico detecta configuración incompleta" "$(python3 server.py diagnostico; echo "salida=$?")" "salida=1"
 check "diagnóstico aprueba configuración completa" "$(APP_BASE_URL=https://repo.example APP_DEMO_AUTH=0 python3 server.py diagnostico | tail -1; echo "salida=${PIPESTATUS[0]}")" "Listo para publicar"

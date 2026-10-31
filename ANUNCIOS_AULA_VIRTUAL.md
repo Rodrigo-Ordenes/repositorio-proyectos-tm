@@ -1,6 +1,6 @@
 # Anuncios listos para el Aula Virtual
 
-Antes de publicar, reemplaza lo que va entre corchetes: `[ENLACE]` es la dirección del sitio publicado y `[CÓDIGO]` es el código del curso de cada paralelo, que se genera en el panel docente.
+Antes de publicar, reemplaza lo que va entre corchetes. `[INVITACIÓN]` es el enlace con vencimiento que copias desde «Acceso de estudiantes» en el panel docente; crea uno por asignatura y paralelo. El código manual es una alternativa para decir en clase.
 
 ---
 
@@ -10,13 +10,13 @@ Antes de publicar, reemplaza lo que va entre corchetes: `[ENLACE]` es la direcci
 
 Hola a todas y todos:
 
-Ya está disponible el repositorio del proyecto **[Incentiva en el Aula / Innova en el Aula]**. Ahí están los [desafíos / casos clínicos], la guía para el video final, el foro y el formulario de entrega.
+Ya está disponible el repositorio del proyecto **[Incentiva en el Aula / Innova en el Aula]**. Ahí están los [desafíos / casos clínicos], el guion de una sola pieza audiovisual de hasta cinco minutos, herramientas gratuitas de dibujo, edición, animación 2D/3D y opciones de IA con sus límites, además del foro y el formulario.
 
-1. Entra a [ENLACE] con **«Continuar con Google PUCV»**, usando tu cuenta @mail.pucv.cl.
-2. En la portada, escribe el código del curso de tu paralelo: **[CÓDIGO]**.
-3. Listo: verás la asignatura de inmediato.
+1. Abre la invitación privada de tu curso: **[INVITACIÓN]**.
+2. Entra con **Google PUCV**, usando @mail.pucv.cl o @pucv.cl.
+3. Listo: quedarás incorporado/a al paralelo y verás los materiales. Si recibiste un código en clase, escríbelo en la portada después de iniciar sesión.
 
-Si no puedes entrar con Google, avísame y te envío un código personal.
+Si no puedes entrar con Google, avísame y te compartiré un código personal por privado.
 
 ---
 
@@ -28,10 +28,10 @@ Hola:
 
 Recuerden que la entrega del video final es el **[FECHA]**, en «Entregar trabajo» del repositorio. Una sola persona entrega por el equipo. Antes de enviar, revisen:
 
-- un solo MP4 de máximo 5 minutos, con subtítulos revisados;
+- un solo MP4 de máximo 5 minutos, con subtítulos revisados y duración máxima de cinco minutos;
 - la ficha de evidencia (la plantilla está en el repositorio);
 - la declaración de uso de IA;
-- las autorizaciones de imagen y voz firmadas.
+- si aparece alguien identificable, autorización de esa persona; también pueden entregar un video sin rostros ni voces identificables.
 
 Si escriben el correo PUCV de cada integrante junto a su nombre, todo el equipo podrá responder en el foro como «Equipo autor».
 
@@ -61,8 +61,8 @@ Gracias por responder el tiquete de salida. La duda más frecuente fue **[DUDA]*
 
 ## 5. Encuesta de cierre
 
-**Asunto:** Encuesta final (5 minutos, anónima)
+**Asunto:** Encuesta final (5 minutos)
 
 Hola:
 
-Para cerrar el proyecto, respondan el **KPSI de salida** y la **encuesta de percepción** en «Tiquetes y encuestas» del repositorio. Son anónimas y sirven para comparar con el inicio y mejorar la experiencia de la próxima cohorte.
+Para cerrar el proyecto, respondan el **KPSI de salida** y la **encuesta de percepción** en «Tiquetes y encuestas» del repositorio. El contenido no lleva nombre ni correo; la participación se registra por separado para limitar respuestas repetidas. Sirve para comparar el inicio y mejorar la experiencia de la próxima cohorte.

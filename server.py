@@ -69,7 +69,7 @@ PROJECTS = {
         "name": "Incentiva en el Aula",
         "course": "Metodología de la Investigación",
         "short": "Innovación en salud aplicada al territorio",
-        "accent": "blue",
+        "accent": "forest",
         "kind": "Video-prototipo + Ficha de Evidencia",
         "description": "Diseña una respuesta fundamentada a un desafío sociosanitario real.",
     },
@@ -77,7 +77,7 @@ PROJECTS = {
         "name": "Innova en el Aula",
         "course": "Fundamentos de Diagnóstico Molecular",
         "short": "Casos, prototipos y diagnóstico molecular",
-        "accent": "wine",
+        "accent": "clay",
         "kind": "Cápsula + prototipo 3D + matriz diagnóstica",
         "description": "Explica cómo una alteración molecular se relaciona con un caso y su diagnóstico.",
     },
@@ -101,7 +101,10 @@ PROJECT_FIELDS = {
     "incentiva": [
         {"key": "challenge", "label": "Tipo de desafío", "required": True, "choices": [
             "Acceso rural", "Personas mayores", "Comunidad escolar", "Discapacidad", "Seguimiento", "Detección temprana", "Otro"]},
+        {"key": "research_question", "label": "Pregunta de investigación", "required": True, "placeholder": "¿Qué problema, población y resultado quieren investigar?"},
+        {"key": "evidence", "label": "Evidencia científica (mínimo 3 fuentes)", "required": True, "placeholder": "Una por línea: autor/año, hallazgo relevante y enlace o referencia APA 7. Prioricen fuentes oficiales, revisiones y estudios de Chile o Latinoamérica."},
         {"key": "community", "label": "Personas o comunidad afectada", "required": True, "placeholder": "A quién afecta el problema y qué muestra la evidencia"},
+        {"key": "solution", "label": "Solución y cómo funcionaría", "required": True, "placeholder": "Qué propone el equipo, cómo se usaría y qué recurso disponible aprovecharía"},
         {"key": "indicator", "label": "Resultado esperado e indicador", "required": True, "placeholder": "Qué cambiaría y cómo lo medirían"},
         {"key": "limitations", "label": "Limitación o condición necesaria", "required": True, "placeholder": "Qué se necesita para implementarla o qué no resuelve"},
     ],
@@ -241,8 +244,8 @@ def case_text(pattern) -> str:
     return extract_docx_text(case_file) if case_file else ""
 
 
-# Anonymous answers: who answered and what was answered live in separate tables with no shared key, and WITHOUT ROWID
-# so that neither table keeps insertion order (a rowid would let anyone holding the database pair the two lists).
+# Response content and participation are stored separately. This prevents direct joins in routine reports,
+# but does not prove anonymity against a privileged database operator or timing/backup analysis.
 ANONYMOUS_TABLES = {
     "exit_ticket_answers": """CREATE TABLE exit_ticket_answers (
       id TEXT PRIMARY KEY, ticket_id INTEGER NOT NULL REFERENCES exit_tickets(id) ON DELETE CASCADE,
@@ -477,7 +480,9 @@ def init_db():
         add_missing_columns(db, "comments", (("parent_id", "INTEGER"), ("badge", "TEXT NOT NULL DEFAULT ''")))
         # A returned (rejected) delivery must not block the team from sending its corrected version.
         db.execute("DROP INDEX IF EXISTS submissions_one_final_per_team")
-        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS submissions_one_open_per_team ON submissions(project_id, lower(trim(team_name))) WHERE team_name <> '' AND status <> 'rejected'")
+        # Teams in separate course sections may use the same label (for example, "Grupo 1").
+        db.execute("DROP INDEX IF EXISTS submissions_one_open_per_team")
+        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS submissions_one_open_per_team ON submissions(project_id, lower(trim(section)), lower(trim(team_name))) WHERE team_name <> '' AND status <> 'rejected'")
         add_missing_columns(db, "resources", (
             ("source_submission_id", "INTEGER"), ("file_storage_key", "TEXT NOT NULL DEFAULT ''"),
             ("file_filename", "TEXT NOT NULL DEFAULT ''"), ("edited_at", "TEXT"),
@@ -499,6 +504,15 @@ def init_db():
               content=CASE WHEN excluded.content<>'' THEN excluded.content ELSE resources.content END,
               tags=excluded.tags WHERE resources.edited_at IS NULL""",
               (project, slug, title, category, summary, content, json.dumps(tags, ensure_ascii=False)))
+        # Seed teacher-reviewed challenge drafts on first launch, with no CLI step required.
+        # INSERT OR IGNORE preserves any edits, publication status, or removal made in the dashboard.
+        challenge_seed = ROOT / "seeds" / "desafios_incentiva.json"
+        if challenge_seed.exists():
+            for challenge in json.loads(challenge_seed.read_text(encoding="utf-8")):
+                db.execute("""INSERT OR IGNORE INTO resources(project_id,slug,title,category,summary,content,tags,status)
+                  VALUES('incentiva',?,?,?,?,?,?,'draft')""",
+                  (challenge["slug"], challenge["title"], f"Desafío · {challenge['type']}", challenge["summary"],
+                   challenge["content"], json.dumps(challenge["tags"], ensure_ascii=False)))
         db.execute("DELETE FROM resources WHERE project_id='incentiva' AND slug IN ('desafio-acceso-rural','desafio-personas-mayores')")
     if rebuilt:
         # Old rowid pages could still hold the insertion order until the file is rewritten.
@@ -711,7 +725,7 @@ def project_indicators(db, project):
 
 
 def anonymize_user(db, user_id):
-    """Right to erasure: remove the person's identity and personal contributions; anonymous answers and team work stay."""
+    """Remove a person's identity and personal contributions; response content stays without a direct user key."""
     user = db.execute("SELECT id,email,display_name FROM users WHERE id=?", (user_id,)).fetchone()
     if not user: return None
     files = []
@@ -749,7 +763,7 @@ def person_export(db, email):
             "comentarios": rows("SELECT c.body,c.status,c.created_at,r.title recurso FROM comments c JOIN resources r ON r.id=c.resource_id WHERE c.user_id=?"),
             "coevaluaciones": rows("SELECT r.title recurso,p.scores,p.strength,p.suggestion,p.updated_at FROM peer_reviews p JOIN resources r ON r.id=p.resource_id WHERE p.reviewer_id=?"),
             "preguntas_de_control": rows("SELECT r.title recurso,q.answers,q.score,q.created_at FROM quiz_attempts q JOIN resources r ON r.id=q.resource_id WHERE q.user_id=?"),
-            "nota": "Las respuestas a tiquetes de salida y encuestas son anónimas: no están ligadas a la cuenta y no se pueden recuperar por persona."}
+            "nota": "El contenido de las respuestas no incluye el correo o nombre; el registro separado de participación sí se liga a la cuenta para limitar duplicados."}
 
 
 def staff_emails(db):
@@ -1780,13 +1794,14 @@ class App(BaseHTTPRequestHandler):
                     parsed_url = urllib.parse.urlparse(url)
                     if parsed_url.scheme != "https" or not parsed_url.netloc or parsed_url.username or parsed_url.password:
                         return self.json({"error": "Los enlaces deben comenzar con https://"}, 400)
+            # This records a content-rights/safe-media declaration, not consent to future or public use.
             consent = int(bool(payload.get("consent_confirmed")))
-            if not consent: return self.json({"error": "Confirma autorización para publicar los materiales del equipo."}, 400)
+            if not consent: return self.json({"error": "Confirma que las imágenes, voces y recursos identificables tienen autorización o que el video evita identificarlos."}, 400)
             if not payload.get("video_length_confirmed"):
                 return self.json({"error":"Confirma que el enlace corresponde al video final único de máximo cinco minutos."},400)
             with connect() as db:
-                existing=db.execute("SELECT 1 FROM submissions WHERE project_id=? AND lower(trim(team_name))=lower(trim(?)) AND status<>'rejected'",
-                                    (project,team_name)).fetchone()
+                existing=db.execute("SELECT 1 FROM submissions WHERE project_id=? AND lower(trim(section))=lower(trim(?)) AND lower(trim(team_name))=lower(trim(?)) AND status<>'rejected'",
+                                    (project,section,team_name)).fetchone()
                 if existing: return self.json({"error":"Este equipo ya registró su entrega final. Contacten a la docente para reemplazarla si corresponde."},409)
                 if upload_key:
                     UPLOAD_DIR.mkdir(parents=True,exist_ok=True)
@@ -1855,7 +1870,7 @@ class App(BaseHTTPRequestHandler):
                     return self.json({"error": "Ya respondiste este tiquete. ¡Gracias!"}, 409)
                 db.execute("INSERT INTO exit_ticket_answers(id,ticket_id,answers,answered_on) VALUES(?,?,?,date('now'))",
                            (secrets.token_hex(12), ticket["id"], json.dumps(answers, ensure_ascii=False)))
-            return self.json({"ok": True, "message": "Respuesta enviada de forma anónima. ¡Gracias!"}, 201)
+            return self.json({"ok": True, "message": "Respuesta recibida sin nombre ni correo en el contenido. ¡Gracias!"}, 201)
         quiz_answer = re.fullmatch(r"/api/quiz/(\d+)", path)
         if quiz_answer:
             user = self.require_user()
@@ -1961,7 +1976,7 @@ class App(BaseHTTPRequestHandler):
                     return self.json({"error": "Ya respondiste esta encuesta. ¡Gracias!"}, 409)
                 db.execute("INSERT INTO survey_answers(id,survey_id,answer_values,comment,answered_on) VALUES(?,?,?,?,date('now'))",
                            (secrets.token_hex(12), survey["id"], json.dumps(values), str(payload.get("comment", "")).strip()[:1500]))
-            return self.json({"ok": True, "message": "Respuesta enviada de forma anónima. ¡Gracias!"}, 201)
+            return self.json({"ok": True, "message": "Respuesta recibida sin nombre ni correo en el contenido. ¡Gracias!"}, 201)
         if path in ("/api/admin/person/delete", "/api/admin/cohort/close"):
             user = self.require_user()
             if not user: return
@@ -1975,7 +1990,7 @@ class App(BaseHTTPRequestHandler):
                     row = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
                     if not row: return self.json({"error": "No hay una cuenta con ese correo."}, 404)
                     files = anonymize_user(db, row["id"])
-                    message = "Datos de la persona eliminados. Sus respuestas anónimas y los trabajos publicados de su equipo se conservan sin su nombre."
+                    message = "Datos de la persona eliminados. El contenido de sus respuestas no conserva nombre o correo; los trabajos publicados del equipo quedan sin su nombre."
                 else:
                     if str(payload.get("confirm", "")).strip() != "CERRAR COHORTE":
                         return self.json({"error": "Escribe CERRAR COHORTE para confirmar."}, 400)

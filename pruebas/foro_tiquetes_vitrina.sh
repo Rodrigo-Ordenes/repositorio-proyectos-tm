@@ -109,7 +109,7 @@ check "preguntas estándar por defecto" "$(req bea $B/api/tickets/$CODE)" "el de
 check "QR en SVG" "$(curl -s -b $S/prof.jar -D - -o $S/qr.svg $B/api/admin/tickets/$TKID/qr.svg)" "image/svg+xml"
 check "estudiante no ve el QR" "$(req bea $B/api/admin/tickets/$TKID/qr.svg)" "\[403\]"
 check "respuestas incompletas" "$(req bea -d '{"answers":["a",""]}' $B/api/tickets/$CODE/answer)" "\[400\]"
-check "responder tiquete" "$(req bea -d '{"answers":["=HYPERLINK(1)","PCR","Videos"]}' $B/api/tickets/$CODE/answer)" "anónima.*\[201\]"
+check "responder tiquete" "$(req bea -d '{"answers":["=HYPERLINK(1)","PCR","Videos"]}' $B/api/tickets/$CODE/answer)" "sin nombre ni correo.*\[201\]"
 check "una sola respuesta por persona" "$(req bea -d '{"answers":["a","b","c"]}' $B/api/tickets/$CODE/answer)" "\[409\]"
 check "fuera del curso no responde" "$(req carla -d '{"answers":["a","b","c"]}' $B/api/tickets/$CODE/answer)" "\[404\]"
 req luis -d '{"answers":["Indicadores","Muestreo","Teleconsulta"]}' $B/api/tickets/$CODE/answer > /dev/null

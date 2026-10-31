@@ -19,7 +19,7 @@ El gasto base estimado queda en **US$7,25 al mes + $9.990 CLP al año**, antes d
 ## Por qué este despliegue
 
 - Mantiene un solo enlace y dominio, pero separa las asignaturas por ruta y por permisos en el servidor.
-- No depende de TI PUCV: la verificación es por correo institucional con enlace de un uso, y cada responsable docente se configura en su proyecto.
+- No depende de TI PUCV: Google OAuth se configura desde una cuenta del equipo y el correo institucional se limita a dominios PUCV. Si la organización bloquea la app, quedan códigos personales y enlaces de correo; cada responsable docente se configura en su proyecto.
 - El disco persistente evita perder SQLite cuando el servicio se reinicia. Las copias de seguridad deben conservarse además en una ubicación controlada por el equipo docente.
 - No usar el plan gratis para información que debe permanecer disponible: además de dormir, Render elimina archivos locales al reiniciar/re-desplegar si no hay un disco persistente.
 - El alojamiento entrega una URL pública; **el portal no queda abierto**: las páginas de curso y sus APIs requieren sesión, y el acceso al curso necesita aprobación docente. Mantener HTTPS, SMTP y la revisión docente habilitados.
