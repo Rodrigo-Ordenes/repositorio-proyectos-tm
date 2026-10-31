@@ -2699,6 +2699,8 @@ def cli_diagnose(args):
     check(free > 0.2, f"Espacio libre: {free:.1f} GB", "Ampliar el disco: quedan menos de 200 MB.", critical=False)
     check(BACKUP_HOURS > 0, f"Respaldo automático cada {BACKUP_HOURS} h", "APP_BACKUP_HOURS=24 para activarlo.", critical=False)
     check(SEED_CASES.exists(), "Casos de Innova en seeds/casos_innova.json", "Ejecutar python3 server.py actualizar-casos.")
+    check(SOS is not None, "Código de emergencia (SOS) configurado",
+          "python3 server.py codigo-sos tu-correo y copiar la línea que imprime a la variable PUCV_SOS.", critical=False)
     for project in PROJECTS:
         deadline = os.environ.get(f"PUCV_{project.upper()}_DEADLINE", "")
         if deadline:

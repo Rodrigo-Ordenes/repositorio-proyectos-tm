@@ -49,13 +49,15 @@ El sitio sirve estos cinco archivos en `/materiales/…` (no tienen datos person
 
 ## Publicar en internet
 
+Paso a paso completo en [MANUAL_DESPLIEGUE.md](MANUAL_DESPLIEGUE.md). Resumen:
+
 [![Desplegar en Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Rodrigo-Ordenes/repositorio-proyectos-tm)
 
 1. Pulsa el botón e inicia sesión en Render con tu cuenta de GitHub. Render lee `render.yaml`: plan Starter con un disco de 1 GB para la base y los archivos (tiene costo mensual; ver `COSTOS_Y_DESPLIEGUE.md`).
 2. Completa las variables marcadas como secretas. Lo mínimo es `APP_BASE_URL` (la dirección `https://….onrender.com` que asigna Render) y `PUCV_ADMIN_EMAILS`.
 3. Cuando termine el despliegue, abre la consola del servicio (*Shell*) y ejecuta:
    - `python3 server.py diagnostico` para revisar la configuración;
-   - `python3 server.py codigo tu-correo@pucv.cl` para tu primer ingreso;
+   - entra con tu código SOS (variable `PUCV_SOS`) o genera uno con `python3 server.py codigo tu-correo@pucv.cl`;
    - Los seis desafíos de Incentiva aparecen automáticamente como borradores para revisión docente.
 4. Para entrar con Google, sigue «Activar Google en 15 minutos» más abajo.
 
@@ -195,6 +197,7 @@ El servidor incluido facilita una primera publicación en un solo hosting. Para 
 
 ## Documentación
 
+- [**Manual de despliegue**: publicar, primer ingreso con SOS, cuentas, mantenimiento y tecnologías](MANUAL_DESPLIEGUE.md)
 - [Plan de mejoras, estado del arte del acceso y tareas priorizadas](PLAN_DE_MEJORAS.md)
 - [Estudio de usabilidad, decisiones de producto y tareas](ESTUDIO_DE_USABILIDAD.md)
 - [Protocolo de validación de usabilidad con estudiantes y docente](PROTOCOLO_VALIDACION_USABILIDAD.md)
