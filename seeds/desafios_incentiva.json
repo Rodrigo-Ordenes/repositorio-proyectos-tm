@@ -1,0 +1,80 @@
+[
+ {
+  "slug": "desafio-retina-rural",
+  "title": "Retinopatía diabética en sectores rurales",
+  "type": "Acceso rural",
+  "summary": "Personas con diabetes de una comuna rural dejan pasar años sin fondo de ojo. ¿Cómo acercar el tamizaje sin trasladar a todos al hospital?",
+  "tags": [
+   "Acceso rural",
+   "Oftalmología",
+   "Diabetes",
+   "Tamizaje"
+  ],
+  "content": "## Problema sociosanitario\nEn una comuna rural del interior, la mayoría de las personas con diabetes inscritas en la posta no tiene un examen de fondo de ojo en los últimos dos años. La retinopatía diabética avanza sin síntomas hasta etapas en que la pérdida de visión ya no se revierte.\n## Comunidad involucrada\nUnas 3.000 personas en cinco localidades dispersas, con una posta rural y un CESFAM a 40 km. Predomina la población adulta mayor y el trabajo agrícola de temporada.\n## Testimonio\n«Me dieron la hora en el hospital para un martes a las nueve. Para llegar tengo que tomar la micro de las seis y perder el día de trabajo. No fui, y ya no me acuerdo cuándo me lo hice.» — Don Hernán, 61 años, temporero (persona ficticia).\n## Barreras de acceso\n- Una sola micro diaria hacia la ciudad.\n- Horarios que coinciden con la jornada agrícola.\n- Desconocimiento de que la retinopatía no da síntomas al inicio.\n- Lista de espera para oftalmología.\n## Datos del expediente (simulados)\n- 420 personas con diabetes inscritas en la posta.\n- 31% con fondo de ojo vigente.\n- Tiempo de viaje promedio al hospital: 2 horas por trayecto.\nCifras y personas ficticias, creadas para el ejercicio. Busquen datos reales en fuentes oficiales (DEIS, Encuesta Nacional de Salud, CASEN, MINSAL) antes de fundamentar la propuesta.\n## Recursos disponibles\n- Tecnólogo médico itinerante una vez al mes.\n- Conectividad 4G intermitente en la posta.\n- Un retinógrafo no midriático en el CESFAM, de uso compartido.\n## Antecedentes científicos para empezar a buscar\n- Tamizaje de retinopatía diabética con retinografía no midriática y telemedicina.\n- Factores asociados a la inasistencia a exámenes preventivos en zonas rurales.\n## Restricciones\n- Sin presupuesto para equipos nuevos.\n- Las imágenes son datos sensibles de salud.\n- Conectividad limitada.\n## Para el equipo\nDiseñen una propuesta acotada que aumente la cobertura del fondo de ojo en esta comunidad. Definan la pregunta de investigación, el indicador que usarían y una forma de simular su funcionamiento en el video.\nBorrador preparado a partir de la postulación del proyecto. La docente debe revisarlo y ajustarlo antes de publicarlo."
+ },
+ {
+  "slug": "desafio-anemia-mayores",
+  "title": "Personas mayores que no retiran sus resultados",
+  "type": "Personas mayores",
+  "summary": "Adultos mayores se toman los exámenes preventivos, pero muchos nunca vuelven por el resultado ni a control. ¿Cómo cerrar ese circuito?",
+  "tags": [
+   "Personas mayores",
+   "Bioanálisis",
+   "Prevención",
+   "Resultados"
+  ],
+  "content": "## Problema sociosanitario\nEn el Examen de Medicina Preventiva del Adulto Mayor, una parte importante de los resultados alterados (hemograma, glicemia, función renal) no llega a una consulta de seguimiento porque la persona no retira el resultado ni vuelve a control.\n## Comunidad involucrada\nAdultos mayores de un sector urbano con alta proporción de personas que viven solas, algunas con baja escolaridad o dificultades auditivas y visuales.\n## Testimonio\n«Me dijeron que el resultado salía en una semana y que lo viera en una página. No tengo computador y mi hija trabaja. Pensé que si era algo malo me iban a llamar.» — Sra. Rosa, 78 años (persona ficticia).\n## Barreras de acceso\n- Resultados disponibles solo en un portal web o en ventanilla.\n- Brecha digital.\n- Dificultades de movilidad.\n- Creencia de que «si no llaman, está todo bien».\n## Datos del expediente (simulados)\n- 1.150 exámenes preventivos al año.\n- 38% de los resultados alterados sin control posterior registrado.\n- Una de cada tres personas vive sola.\nCifras y personas ficticias, creadas para el ejercicio. Busquen datos reales en fuentes oficiales (DEIS, Encuesta Nacional de Salud, CASEN, MINSAL) antes de fundamentar la propuesta.\n## Recursos disponibles\n- Laboratorio con sistema informático que permite marcar valores críticos.\n- Agentes comunitarios de salud en juntas de vecinos.\n- Llamados telefónicos desde el CESFAM, con poco personal.\n## Antecedentes científicos para empezar a buscar\n- Pérdida de seguimiento de resultados de laboratorio en atención primaria.\n- Estrategias de comunicación de resultados a personas mayores.\n## Restricciones\n- No se puede enviar información clínica por canales no seguros.\n- El personal disponible para llamar es limitado.\n## Para el equipo\nPropongan cómo lograr que los resultados alterados lleguen a un control a tiempo. ¿Qué indicador mostraría que funciona?\nBorrador preparado a partir de la postulación del proyecto. La docente debe revisarlo y ajustarlo antes de publicarlo."
+ },
+ {
+  "slug": "desafio-vision-escolar",
+  "title": "Problemas visuales sin detectar en la escuela",
+  "type": "Comunidad escolar",
+  "summary": "Niñas y niños con bajo rendimiento escolar resultan tener problemas visuales que nadie detectó. ¿Cómo mejorar la pesquisa en el colegio?",
+  "tags": [
+   "Comunidad escolar",
+   "Oftalmología",
+   "Pesquisa",
+   "Infancia"
+  ],
+  "content": "## Problema sociosanitario\nEn una escuela básica, el profesorado observa estudiantes que se acercan al pizarrón, se cansan al leer o tienen bajo rendimiento. La pesquisa visual escolar llega tarde o no se repite, y muchas derivaciones no se concretan.\n## Comunidad involucrada\nEscuela básica municipal con 600 estudiantes, alta vulnerabilidad y apoderados con jornadas laborales extensas.\n## Testimonio\n«La profesora me mandó una nota diciendo que el niño no veía bien. Fui al consultorio y me dijeron que tenía que esperar la hora del programa. Pasó el año y nunca lo llamaron.» — Madre de un estudiante de 4.º básico (persona ficticia).\n## Barreras de acceso\n- El tamizaje no se repite todos los años.\n- Derivaciones que se pierden entre la escuela y el centro de salud.\n- Apoderados sin tiempo para acompañar a los controles.\n- Estigma asociado a usar lentes.\n## Datos del expediente (simulados)\n- Tamizaje en 1.º básico con 18% de resultados alterados.\n- 45% de las derivaciones sin atención registrada.\n- Sin tamizaje en cursos superiores.\nCifras y personas ficticias, creadas para el ejercicio. Busquen datos reales en fuentes oficiales (DEIS, Encuesta Nacional de Salud, CASEN, MINSAL) antes de fundamentar la propuesta.\n## Recursos disponibles\n- Convenio con el CESFAM.\n- Profesorado dispuesto a apoyar.\n- Programa de entrega de lentes para estudiantes que lo requieran.\n## Antecedentes científicos para empezar a buscar\n- Tamizaje de agudeza visual en escolares y su efecto en el rendimiento.\n- Barreras para completar la derivación oftalmológica en la infancia.\n## Restricciones\n- Trabajo con menores de edad: se necesita consentimiento de apoderados.\n- La escuela no puede almacenar datos de salud.\n## Para el equipo\nDiseñen una estrategia para que más estudiantes con problemas visuales sean detectados y lleguen a atención. Simulen el recorrido de un estudiante en el video.\nBorrador preparado a partir de la postulación del proyecto. La docente debe revisarlo y ajustarlo antes de publicarlo."
+ },
+ {
+  "slug": "desafio-muestras-tea",
+  "title": "Toma de muestras para personas con condición del espectro autista",
+  "type": "Discapacidad",
+  "summary": "Para muchas personas con TEA, una toma de muestras de sangre es una experiencia muy difícil que termina en exámenes no realizados. ¿Cómo hacerla más accesible?",
+  "tags": [
+   "Discapacidad",
+   "Bioanálisis",
+   "Toma de muestras",
+   "Accesibilidad"
+  ],
+  "content": "## Problema sociosanitario\nEn la sala de toma de muestras de un CESFAM, varias personas con condición del espectro autista (TEA) se retiran sin tomarse el examen. Ruido, esperas largas, luces y contacto físico inesperado generan crisis, y las familias postergan los controles.\n## Comunidad involucrada\nNiñas, niños y personas adultas con TEA y sus familias, además del equipo de la sala de toma de muestras.\n## Testimonio\n«Llegamos a las 7:30, había cuarenta personas y mucho ruido. Mi hijo se tapó los oídos y empezó a gritar. Nos fuimos. Llevamos seis meses sin el examen que pidió el neurólogo.» — Padre de un adolescente con TEA (persona ficticia).\n## Barreras de acceso\n- Sala compartida y ruidosa en horario punta.\n- Sin información previa adaptada sobre qué va a pasar.\n- Personal sin formación específica.\n- Muestras que se pierden si la extracción se interrumpe.\n## Datos del expediente (simulados)\n- 60 personas con diagnóstico de TEA inscritas que requieren exámenes periódicos.\n- Una de cada tres no completa la toma de muestras indicada.\nCifras y personas ficticias, creadas para el ejercicio. Busquen datos reales en fuentes oficiales (DEIS, Encuesta Nacional de Salud, CASEN, MINSAL) antes de fundamentar la propuesta.\n## Recursos disponibles\n- Sala de toma de muestras con un box que se puede usar fuera del horario punta.\n- Equipo dispuesto a capacitarse.\n- Agrupación de familias TEA en la comuna.\n## Antecedentes científicos para empezar a buscar\n- Apoyos visuales y anticipación en procedimientos de salud para personas con TEA.\n- Factores preanalíticos que afectan la calidad de la muestra.\n## Restricciones\n- Sin presupuesto para remodelar la sala.\n- Hay que resguardar la calidad preanalítica de la muestra.\n## Para el equipo\nPropongan una solución para que las personas con TEA completen su toma de muestras. ¿Cómo medirían que la experiencia mejoró sin comprometer la calidad de la muestra?\nBorrador preparado a partir de la postulación del proyecto. La docente debe revisarlo y ajustarlo antes de publicarlo."
+ },
+ {
+  "slug": "desafio-seguimiento-hba1c",
+  "title": "Resultados que no se entienden: control de la diabetes",
+  "type": "Seguimiento",
+  "summary": "Personas con diabetes reciben su hemoglobina glicosilada, pero no entienden qué significa ni qué hacer. ¿Cómo mejorar la comprensión y el seguimiento?",
+  "tags": [
+   "Seguimiento",
+   "Bioanálisis",
+   "Diabetes",
+   "Alfabetización en salud"
+  ],
+  "content": "## Problema sociosanitario\nEn un programa cardiovascular, muchas personas con diabetes no saben interpretar su hemoglobina glicosilada (HbA1c) ni la relacionan con su tratamiento. Los resultados fuera de meta no siempre generan un ajuste oportuno.\n## Comunidad involucrada\nPersonas con diabetes tipo 2 de un sector urbano y periurbano, con niveles diversos de alfabetización en salud.\n## Testimonio\n«Me salió 9,2 y no sé si eso es mucho o poco. La doctora me lo explicó rápido. Yo me siento bien, así que sigo igual.» — Don Luis, 55 años, conductor (persona ficticia).\n## Barreras de acceso\n- Informes de laboratorio con lenguaje técnico.\n- Consultas breves.\n- Brecha digital para usar aplicaciones.\n- Ausencia de síntomas que motiven el cambio.\n## Datos del expediente (simulados)\n- 900 personas en el programa.\n- Solo 40% sabe cuál es su meta de HbA1c.\n- 52% con HbA1c fuera de meta en el último control.\nCifras y personas ficticias, creadas para el ejercicio. Busquen datos reales en fuentes oficiales (DEIS, Encuesta Nacional de Salud, CASEN, MINSAL) antes de fundamentar la propuesta.\n## Recursos disponibles\n- El laboratorio puede agregar texto al informe.\n- Sala de espera con televisor.\n- Grupo de WhatsApp institucional para avisos generales.\n## Antecedentes científicos para empezar a buscar\n- Alfabetización en salud y control glicémico.\n- Formatos de informe de resultados centrados en el paciente.\n## Restricciones\n- Los mensajes no pueden incluir datos personales por canales abiertos.\n- Lo que se proponga debe servir también a personas con baja visión.\n## Para el equipo\nDiseñen una forma de que las personas comprendan su resultado y actúen. Definan qué indicador mostraría que el seguimiento mejoró.\nBorrador preparado a partir de la postulación del proyecto. La docente debe revisarlo y ajustarlo antes de publicarlo."
+ },
+ {
+  "slug": "desafio-renal-temprano",
+  "title": "Daño renal que se detecta tarde",
+  "type": "Detección temprana",
+  "summary": "Personas con hipertensión o diabetes llegan a etapas avanzadas de enfermedad renal sin que se haya medido la albuminuria. ¿Cómo detectar antes?",
+  "tags": [
+   "Detección temprana",
+   "Bioanálisis",
+   "Enfermedad renal",
+   "Hipertensión"
+  ],
+  "content": "## Problema sociosanitario\nLa enfermedad renal crónica avanza sin síntomas. En un CESFAM, la creatinina se mide con regularidad, pero la razón albúmina/creatinina en orina (RAC) se solicita poco y muchas muestras no llegan al laboratorio.\n## Comunidad involucrada\nPersonas con hipertensión o diabetes del programa cardiovascular de un CESFAM, muchas en edad laboral.\n## Testimonio\n«Me pidieron la orina de la primera mañana, pero el laboratorio abre a las ocho y yo entro a trabajar a las siete. Nunca la llevé.» — Sra. Patricia, 49 años, operaria (persona ficticia).\n## Barreras de acceso\n- Muestra de primera orina con horario de recepción incompatible.\n- Poco conocimiento sobre el riesgo renal.\n- Solicitud del examen que depende de cada profesional.\n## Datos del expediente (simulados)\n- 1.600 personas en el programa cardiovascular.\n- RAC vigente en 35%.\n- 18% de las muestras de orina solicitadas no llegan.\nCifras y personas ficticias, creadas para el ejercicio. Busquen datos reales en fuentes oficiales (DEIS, Encuesta Nacional de Salud, CASEN, MINSAL) antes de fundamentar la propuesta.\n## Recursos disponibles\n- Laboratorio con capacidad ociosa en la tarde.\n- Recolectores de orina disponibles para entregar.\n- Sistema de alertas en la ficha clínica.\n## Antecedentes científicos para empezar a buscar\n- Tamizaje de enfermedad renal crónica con albuminuria en personas con diabetes e hipertensión.\n- Factores preanalíticos de la muestra de orina.\n## Restricciones\n- La muestra debe cumplir condiciones preanalíticas.\n- No hay más personal de laboratorio.\n## Para el equipo\nPropongan una estrategia para aumentar la medición oportuna de la RAC. ¿Cómo simularían su funcionamiento y qué indicador usarían?\nBorrador preparado a partir de la postulación del proyecto. La docente debe revisarlo y ajustarlo antes de publicarlo."
+ }
+]

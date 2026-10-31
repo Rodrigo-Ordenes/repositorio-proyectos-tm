@@ -1,0 +1,851 @@
+const main = document.querySelector('#main');
+const headerActions = document.querySelector('#header-actions');
+const toast = document.querySelector('#toast');
+const PROJECTS = {
+  incentiva: {name:'Incentiva en el Aula', course:'Metodología de la Investigación', short:'Innovación en salud aplicada al territorio', accent:'blue', kind:'Video-prototipo + Ficha de Evidencia', description:'Diseña una respuesta fundamentada a un desafío sociosanitario real.'},
+  innova: {name:'Innova en el Aula', course:'Fundamentos de Diagnóstico Molecular', short:'Casos, prototipos y diagnóstico molecular', accent:'wine', kind:'Cápsula + prototipo 3D + matriz diagnóstica', description:'Explica cómo una alteración molecular se relaciona con un caso y su diagnóstico.'}
+};
+let user = null;
+let activeProjects = [];
+let pendingProjects = [];
+let managedProjects = [];
+let projectConfig = {};
+let mySections = {};
+let readerProjects = [];
+let resourceCache = {};
+let toastTimer;
+
+const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Written materials use a tiny format: "## " starts a heading, "- " a bullet, anything else is a paragraph.
+function richText(value) {
+  const out=[]; let list=[];
+  const flush=()=>{if(list.length){out.push(`<ul class="detail-list">${list.join('')}</ul>`);list=[];}};
+  String(value??'').split(/\n+/).map(l=>l.trim()).filter(Boolean).forEach(line=>{
+    if(line.startsWith('- ')){list.push(`<li>${esc(line.slice(2))}</li>`);return;}
+    flush(); out.push(line.startsWith('## ')?`<h3 class="detail-heading">${esc(line.slice(3))}</h3>`:`<p class="detail-content">${esc(line)}</p>`);});
+  flush(); return out.join('');
+}
+const paragraphs = value => String(value ?? '').split(/\n+/).map(line=>line.trim()).filter(Boolean).map(line=>`<p class="detail-content">${esc(line)}</p>`).join('');
+async function fileToBase64(file) {
+  const bytes=new Uint8Array(await file.arrayBuffer());let binary='';
+  for(let i=0;i<bytes.length;i+=0x8000)binary+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
+  return btoa(binary);
+}
+function notify(message) {
+  toast.textContent = message; toast.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('show'), 3400);
+}
+async function api(path, options={}) {
+  const response = await fetch(path, {credentials:'same-origin', ...options, headers:{'Content-Type':'application/json', ...(options.headers||{})}});
+  const data = await response.json().catch(()=>({}));
+  if (!response.ok) { if (response.status===401) { user=null; render(); } throw new Error(data.error || 'Ocurrió un error.'); }
+  return data;
+}
+function currentPath() { return location.pathname.replace(/\/$/,'') || '/'; }
+function go(path) { history.pushState({},'',path); render(); window.scrollTo(0,0); }
+function linkHandler(event) {
+  const anchor=event.target.closest('a[data-route]');
+  if (!anchor) return;
+  event.preventDefault(); go(anchor.dataset.route);
+}
+document.addEventListener('click',linkHandler);
+window.addEventListener('popstate',render);
+
+const THEMES={auto:'Tema: automático',light:'Tema: claro',dark:'Tema: oscuro'};
+function themeButton() {
+  let theme='auto'; try{theme=localStorage.getItem('theme')||'auto';}catch{}
+  return `<button class="text-button theme-toggle" type="button" data-theme-toggle aria-label="${THEMES[theme]}. Cambiar tema" title="${THEMES[theme]}"><span aria-hidden="true">${theme==='dark'?'☾':theme==='light'?'☀':'◐'}</span></button>`;
+}
+document.addEventListener('click',e=>{if(!e.target.closest('[data-theme-toggle]'))return;
+  let theme='auto'; try{theme=localStorage.getItem('theme')||'auto';}catch{}
+  const next={auto:'light',light:'dark',dark:'auto'}[theme]||'auto';
+  try{localStorage.setItem('theme',next);}catch{}
+  if(next==='auto')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',next);
+  header(); notify(THEMES[next]);});
+function header() {
+  if (!user) { headerActions.innerHTML=themeButton(); return; }
+  headerActions.innerHTML=themeButton()+`${['admin','editor'].includes(user.role)?'<a class="text-button" href="/admin" data-route="/admin">Revisión</a>':''}<span class="user-chip" aria-label="Sesión iniciada: ${esc(user.email)}"><i class="user-dot" aria-hidden="true"></i><span class="user-email">${esc(user.email)}</span></span><a class="text-button" href="/auth/logout">Salir</a>`;
+}
+function card(projectId) {
+  const p=PROJECTS[projectId], innova=projectId==='innova';
+  return `<article class="project-card ${innova?'innova':''}"><div class="card-inner">
+    <span class="project-mark">${innova?'02 · INNOVA':'01 · INCENTIVA'}</span>
+    <h2>${esc(p.name)}</h2><div class="course-label">${esc(p.course)}</div>
+    <p>${esc(p.description)}</p>
+    <div class="card-bottom"><span class="kind">${esc(p.kind)}</span><a class="button project-button" data-route="/${projectId}" href="/${projectId}">Entrar al proyecto <span aria-hidden="true">→</span></a></div>
+  </div></article>`;
+}
+function accessCard(projectId) {
+  const p=PROJECTS[projectId], innova=projectId==='innova', pending=pendingProjects.includes(projectId);
+  return `<article class="access-request-card ${innova?'innova':''}"><span class="project-mark">${innova?'02 · INNOVA':'01 · INCENTIVA'}</span><h3>${esc(p.name)}</h3><p>${esc(p.course)}</p>${pending?'<span class="pending-label">Solicitud pendiente de aprobación</span>':`<button class="button secondary small" data-request-access="${projectId}">Solicitar acceso</button>`}</article>`;
+}
+function home() {
+  const available=Object.keys(PROJECTS);
+  const visible=activeProjects.filter(id=>PROJECTS[id]);
+  const requests=available.filter(id=>!visible.includes(id));
+  main.innerHTML=`<section class="hero"><div class="eyebrow">Escuela de Tecnología Médica · PUCV</div>
+    <div class="hero-row"><div><h1>Proyectos de innovación<br><span>en Tecnología Médica.</span></h1>
+      <p class="lead">Cada asignatura tiene su propio espacio, materiales y entregas. La docente autoriza qué cuentas pueden entrar.</p></div>
+      <div class="access-note"><span class="lock-icon" aria-hidden="true">●</span>Acceso validado por asignatura</div></div>
+    </section>
+    ${visible.length?`<section aria-labelledby="projects-title"><div class="section-head"><div><div class="eyebrow">Asignaturas autorizadas</div><h2 id="projects-title">Tus proyectos</h2></div></div><div class="project-grid">${visible.map(card).join('')}</div></section>`:'<div class="empty-state">Tu correo ya fue verificado. Solicita acceso a tu asignatura; la docente revisará la solicitud antes de mostrarte los materiales.</div>'}
+    ${readerProjects.length?`<section aria-labelledby="showcase-title"><div class="section-head"><div><div class="eyebrow">Abierto a la comunidad PUCV</div><h2 id="showcase-title">Vitrina de trabajos</h2></div></div><div class="project-grid">${readerProjects.map(id=>`<article class="project-card ${id==='innova'?'innova':''}"><div class="card-inner"><span class="project-mark">Modo lector</span><h2>${esc(PROJECTS[id].name)}</h2><div class="course-label">${esc(PROJECTS[id].course)}</div><p>Mira las cápsulas y videos que sus equipos autorizaron compartir con otros cursos.</p><div class="card-bottom"><span class="kind">Solo lectura</span><a class="button project-button" data-route="/${id}" href="/${id}">Ver la vitrina <span aria-hidden="true">→</span></a></div></div></article>`).join('')}</div></section>`:''}
+    ${requests.length?`<section aria-labelledby="request-title"><div class="section-head"><div><div class="eyebrow">Acceso a cursos</div><h2 id="request-title">Solicitar acceso</h2></div></div>
+      <form id="join-form" class="join-row"><div><strong>¿Tienes el código del curso?</strong><p class="helper">La docente lo muestra en clase o en el Aula Virtual. Con él entras de inmediato, sin esperar aprobación.</p></div><label class="visually-hidden" for="join-code">Código del curso</label><input id="join-code" class="code-input" required maxlength="20" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX"><button class="button small" type="submit">Unirme →</button></form>
+      <div class="access-request-grid">${requests.map(accessCard).join('')}</div></section>`:''}
+    <section class="principles" aria-label="Características del repositorio">
+      <article class="principle"><strong>Una entrada común</strong><p>El mismo enlace ofrece acceso a los dos portales independientes.</p></article>
+      <article class="principle"><strong>Autorización por curso</strong><p>Cada docente aprueba quién puede consultar sus materiales.</p></article>
+      <article class="principle"><strong>Contenido bajo revisión</strong><p>Las entregas y comentarios pasan por revisión antes de publicarse.</p></article>
+    </section>`;
+  main.querySelectorAll('[data-request-access]').forEach(button=>button.addEventListener('click',()=>requestAccess(button.dataset.requestAccess,button)));
+  const joinForm=document.querySelector('#join-form');
+  if(joinForm) joinForm.addEventListener('submit',async e=>{e.preventDefault();const button=joinForm.querySelector('button');button.disabled=true;
+    try{const result=await api('/api/join',{method:'POST',body:JSON.stringify({code:document.querySelector('#join-code').value})});notify(result.message);await bootstrap();if(result.project_id)go(`/${result.project_id}`);}
+    catch(ex){notify(ex.message);button.disabled=false;}});
+}
+async function requestAccess(projectId,button) {
+  button.disabled=true;
+  try {const result=await api('/api/access-requests',{method:'POST',body:JSON.stringify({project_id:projectId})});notify(result.message);await bootstrap();}
+  catch(error){notify(error.message);button.disabled=false;}
+}
+function accessDeniedPage(projectId) {
+  const p=PROJECTS[projectId], pending=pendingProjects.includes(projectId);
+  main.innerHTML=`<section class="project-page ${projectId==='innova'?'innova-theme':''}"><a class="back-link" data-route="/" href="/">← Volver a los proyectos</a><div class="empty-state"><div class="eyebrow">${esc(p.name)}</div><h1>Acceso por validar</h1><p>${pending?'La docente recibió tu solicitud y aún no la ha aprobado.':'Solicita acceso a esta asignatura. Solo después de la aprobación podrás ver sus recursos.'}</p>${pending?'<span class="pending-label">Solicitud pendiente de aprobación</span>':`<button class="button" id="request-project">Solicitar acceso</button>`}</div></section>`;
+  const button=document.querySelector('#request-project');if(button)button.addEventListener('click',()=>requestAccess(projectId,button));
+}
+// Same six blocks and times as the proposal and GUIA_VIDEO_PROTOTIPO.md; update the three together.
+const STORYBOARD=[
+  ['0:00–0:45','Problema y contexto territorial','Caso clínico simulado y pregunta'],
+  ['0:45–1:25','Personas o comunidad afectada','Alteración y proceso molecular'],
+  ['1:25–2:15','Solución propuesta','Propuesta diagnóstica o prototipo'],
+  ['2:15–3:45','Simulación de su funcionamiento','Simulación: cómo funciona la técnica o el modelo 3D'],
+  ['3:45–4:25','Resultado esperado e indicador','Resultado esperado y controles'],
+  ['4:25–5:00','Limitación o condición necesaria','Limitación y cierre']
+];
+function videoToolkit(projectId) {
+  const isInnova=projectId==='innova';
+  return `<details class="toolkit" aria-labelledby="toolkit-title"><summary class="toolkit-summary"><span class="eyebrow">Taller audiovisual</span><strong>Guía para un video final · máximo 5 minutos</strong><span class="toolkit-summary-action">Ver guion y herramientas <span aria-hidden="true">＋</span></span></summary>
+    <div class="toolkit-heading"><div><div class="eyebrow">Taller de producción · alternativas gratuitas</div><h2 id="toolkit-title">Un video final, hecho en equipo</h2></div><p>Las etapas de abajo son capítulos sugeridos dentro de una sola pieza de hasta cinco minutos. Elijan herramientas según lo que necesite su idea; la IA es opcional.</p></div>
+    <div class="storyboard-grid"><article><h3>Guion sugerido · 5 minutos</h3><ol>${STORYBOARD.map(([time,incentiva,innova])=>`<li><b>${time}</b> · ${esc(isInnova?innova:incentiva)}</li>`).join('')}</ol></article><article><h3>Enfoque de esta asignatura</h3><p>${isInnova?'Usen un caso clínico simulado. Conecten hallazgo, mecanismo o patología, evidencia y decisión diagnóstica; muestren cómo funcionaría su propuesta y qué control o dato permitiría evaluarla. La encuesta diagnóstica inicial/final sirve para explorar aprendizaje, no para afirmar eficacia clínica.':'Partan del desafío y la necesidad territorial. Expliquen a quién afecta, qué muestra la investigación, cómo se probaría la solución en una situación simulada y qué indicador usarían para comparar el diagnóstico inicial y final.'}</p><p class="helper">Pueden mover, combinar o renombrar los capítulos; no son seis entregas ni seis videos. Se evalúa un MP4 final por equipo.</p></article></div>
+    <div class="toolkit-grid">
+      <article class="tool-card"><span class="tool-step">01 · DISEÑO Y ANIMACIÓN</span><h3>Canva Video</h3><p>Storyboard por escenas, texto animado, diagramas y voz. En el plan gratuito, exporta MP4 hasta 1080p y 30 minutos si se usan recursos gratuitos.</p><a class="tool-link" href="https://www.canva.com/video-editor/" target="_blank" rel="noopener noreferrer">Abrir Canva Video ↗</a></article>
+      <article class="tool-card"><span class="tool-step">02 · EDICIÓN FINAL</span><h3>Clipchamp</h3><p>Une clips, capturas de pantalla, narración y subtítulos. La versión personal gratuita permite exportar hasta 1080p; funciona en Edge o Chrome.</p><a class="tool-link" href="https://app.clipchamp.com/" target="_blank" rel="noopener noreferrer">Abrir Clipchamp ↗</a></article>
+      <article class="tool-card"><span class="tool-step">03 · PROTOTIPO 3D</span><h3>${isInnova?'Fusion 360 o Blender':'Blender, si necesitan animar una solución'}</h3><p>${isInnova?'El curso ya cuenta con guía y videos de Fusion 360. La licencia educativa de Autodesk requiere validar elegibilidad. Blender es una alternativa gratuita y abierta, aunque toma más tiempo aprenderlo.':'Blender es gratuito y permite modelar y animar; para una idea simple bastan dibujos, maqueta física o capturas del prototipo.'}</p><div class="tool-links"><a class="tool-link" href="https://www.blender.org/download/" target="_blank" rel="noopener noreferrer">Descargar Blender ↗</a>${isInnova?'<a class="tool-link" href="https://www.autodesk.com/education/edu-software/fusion" target="_blank" rel="noopener noreferrer">Revisar acceso educativo a Fusion ↗</a>':''}</div></article>
+    </div>
+    <div class="ai-tools"><div class="eyebrow">Opcional · IA para apoyar escenas</div><p class="helper">Úsenla para crear un recurso visual breve o animar una idea, no para reemplazar el análisis del equipo. Los cupos y funciones gratis dependen de la cuenta y pueden cambiar.</p><div class="ai-tools-grid">
+      <article class="tool-card"><h3>Adobe Express</h3><p>Diseño y animación manual; el asistente ofrece generaciones gratuitas limitadas por día. Útil para títulos, diagramas y una escena explicativa.</p><a class="tool-link" href="https://www.adobe.com/express/" target="_blank" rel="noopener noreferrer">Probar Adobe Express ↗</a></article>
+      <article class="tool-card"><h3>CapCut</h3><p>Editor con herramientas automáticas y funciones de IA. El plan gratis cubre edición básica; algunas funciones generativas pueden pedir créditos o plan Pro.</p><a class="tool-link" href="https://www.capcut.com/tools" target="_blank" rel="noopener noreferrer">Explorar herramientas CapCut ↗</a></article>
+      <article class="tool-card"><h3>Pika</h3><p>Para probar una animación muy corta desde texto o imagen; su plan gratuito entrega créditos limitados. Revisen el costo de cada generación antes de crear.</p><a class="tool-link" href="https://pika.art/" target="_blank" rel="noopener noreferrer">Probar Pika ↗</a></article>
+    </div></div>
+    <div class="toolkit-plan"><strong>Una forma simple de repartirse el trabajo</strong><p>1) guion y storyboard · 2) demostración, maqueta o animación · 3) narración y grabación · 4) edición, subtítulos y revisión. Una persona del grupo sube el único MP4 final; el equipo conserva una copia compartida y la ficha de evidencia.</p></div>
+    <p class="toolkit-note"><a class="button secondary small" href="/kit/${projectId}" data-route="/kit/${projectId}">Abrir el kit imprimible (storyboard, grabación e IA) →</a></p>
+    <p class="helper toolkit-note">Trabajen con los casos simulados del curso. No incorporen nombres, fichas ni datos de pacientes reales en herramientas externas.</p>
+  </details>`;
+}
+function projectPage(projectId, reader=false) {
+  const p=PROJECTS[projectId], cls=projectId==='innova'?'innova-theme':'';
+  main.innerHTML=`<div class="project-page ${cls}">
+    <a class="back-link" data-route="/" href="/">← Volver a los proyectos</a>
+    <section class="project-hero"><span class="project-mark">${projectId==='innova'?'Innova en el Aula':'Incentiva en el Aula'}</span>
+      <h1>${esc(p.short)}</h1><p class="lead">${esc(p.description)}</p>
+      <div class="project-meta"><span class="pill">${esc(p.course)}</span><span class="pill">${esc(p.kind)}</span></div>
+    </section>
+    ${reader?`<div class="notice">Estás en la vitrina abierta (modo lector): ves los trabajos que sus equipos autorizaron compartir. Para entregar o comentar necesitas el código del curso.</div>`:`<nav class="project-tabs" aria-label="Secciones de ${esc(p.name)}">
+      <button class="tab" aria-pressed="true" data-tab="resources">${projectId==='innova'?'Casos y recursos':'Desafíos'}</button>
+      <button class="tab" aria-pressed="false" data-tab="deliver">Entregar trabajo</button>
+      <button class="tab" aria-pressed="false" data-tab="forum">Foro</button>
+      <button class="tab" aria-pressed="false" data-tab="tickets">Tiquetes y encuestas</button>
+    </nav>
+    ${videoToolkit(projectId)}`}
+    <section id="project-content" aria-live="polite"><div class="loading">Cargando recursos del proyecto…</div></section>
+  </div>`;
+  main.querySelectorAll('[data-tab]').forEach(button=>button.addEventListener('click',()=>selectTab(projectId,button.dataset.tab,button)));
+  loadResources(projectId).then(()=>showResources(projectId)).catch(err=>{document.querySelector('#project-content').innerHTML=`<div class="empty-state">${esc(err.message)}</div>`;});
+}
+async function loadResources(projectId) {
+  if (!resourceCache[projectId]) resourceCache[projectId]=await api(`/api/resources?project=${projectId}`);
+}
+function selectTab(projectId, tab, button) {
+  main.querySelectorAll('[data-tab]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
+  if(tab==='resources') showResources(projectId);
+  if(tab==='deliver') showDelivery(projectId);
+  if(tab==='forum') showForum(projectId);
+  if(tab==='tickets') showTickets(projectId);
+}
+const searchText=x=>`${x.title} ${x.summary} ${x.category} ${x.tags.join(' ')} ${x.team_name||''} ${(x.members||[]).join(' ')} ${(x.fields||[]).map(f=>f.value).join(' ')}`.toLowerCase();
+function showResources(projectId) {
+  const root=document.querySelector('#project-content'); if(!root)return;
+  const items=resourceCache[projectId]||[];
+  const cats=[...new Set(items.map(x=>x.category))];
+  const sections=[...new Set(items.map(x=>x.section).filter(Boolean))];
+  const surprise=projectId==='incentiva'&&items.some(x=>/caso|desaf[ií]o/i.test(x.category));
+  const empty=projectId==='incentiva'?'La docente publicará aquí los desafíos simulados. Cuando estén disponibles, podrán sacar uno de la caja sorpresa.':'Todavía no hay materiales publicados para esta asignatura.';
+  root.innerHTML=`<div class="toolbar"><label class="search-wrap"><span class="visually-hidden">Buscar en este proyecto</span><input id="resource-search" type="search" placeholder="Buscar por tema, gen, técnica o equipo"></label>
+      <label><span class="visually-hidden">Filtrar por tipo</span><select id="category-filter" class="select"><option value="">Todos los tipos</option>${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select></label>
+      ${sections.length?`<label><span class="visually-hidden">Filtrar por paralelo</span><select id="section-filter" class="select"><option value="">Todos los paralelos</option>${sections.map(c=>`<option>${esc(c)}</option>`).join('')}</select></label>`:''}</div>
+    ${surprise?'<div class="surprise-row"><div><strong>Caja sorpresa</strong><p class="helper">Sortea un desafío simulado para iniciar el trabajo del equipo.</p></div><button class="button secondary small" type="button" id="surprise-case">Sacar un desafío →</button></div>':''}
+    <div class="resource-grid" id="resource-grid"></div>`;
+  const search=root.querySelector('#resource-search'), select=root.querySelector('#category-filter'), sectionSelect=root.querySelector('#section-filter'), grid=root.querySelector('#resource-grid');
+  const update=()=>{const q=search.value.toLowerCase(), cat=select.value, section=sectionSelect?sectionSelect.value:'';
+    const arr=items.filter(x=>searchText(x).includes(q)&&(!cat||x.category===cat)&&(!section||x.section===section));
+    grid.innerHTML=arr.length?arr.map(x=>resourceCard(x,projectId)).join(''):`<div class="empty-state">${items.length?'No encontramos recursos con esa combinación. Prueba otra palabra o quita un filtro.':empty}</div>`;};
+  update();
+  search.addEventListener('input',update); select.addEventListener('change',update); if(sectionSelect)sectionSelect.addEventListener('change',update);
+  const randomButton=root.querySelector('#surprise-case');if(randomButton)randomButton.addEventListener('click',()=>{const cases=items.filter(x=>/caso|desaf[ií]o/i.test(x.category));if(!cases.length){notify('La docente aún no ha publicado desafíos para sortear.');return;}const selected=cases[Math.floor(Math.random()*cases.length)];go(`/${projectId}/recurso/${encodeURIComponent(selected.slug)}`);});
+  grid.addEventListener('click',e=>{const a=e.target.closest('[data-resource]');if(a){e.preventDefault();go(`/${projectId}/recurso/${a.dataset.resource}`);}});
+}
+function resourceCard(resource,projectId) {
+  const team=resource.team_name?`<span class="resource-team">${esc(resource.team_name)}${resource.section?' · '+esc(resource.section):''}</span>`:'';
+  return `<a class="resource-card" href="/${projectId}/recurso/${encodeURIComponent(resource.slug)}" data-resource="${esc(resource.slug)}">
+    <div class="resource-top"><span class="resource-category">${esc(resource.category)}</span><span class="resource-arrow" aria-hidden="true">↗</span></div>
+    <h3>${esc(resource.title)}</h3>${team}<p>${esc(resource.summary)}</p><div class="tags">${resource.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}${resource.has_file?'<span class="tag">Archivo descargable</span>':''}${resource.ai_declaration?'<span class="tag">IA declarada</span>':''}${resource.has_subtitles?'<span class="tag">Subtitulado</span>':''}${resource.quiz_count?'<span class="tag">Preguntas de control</span>':''}${resource.comment_count?`<span class="tag">Foro · ${resource.comment_count}</span>`:''}</div>
+  </a>`;
+}
+function fieldInput(spec) {
+  const id=`f-${spec.key}`, label=`${esc(spec.label)}${spec.required?'':' (opcional)'}`;
+  const control=spec.choices?`<select id="${id}" name="pf_${spec.key}" class="select"${spec.required?' required':''}><option value="">Elige una opción</option>${spec.choices.map(c=>`<option>${esc(c)}</option>`).join('')}</select>`
+    :`<textarea id="${id}" name="pf_${spec.key}" rows="2" maxlength="1500"${spec.required?' required':''} placeholder="${esc(spec.placeholder||'')}"></textarea>`;
+  return `<div class="field"><label for="${id}">${label}</label>${control}</div>`;
+}
+function showDelivery(projectId) {
+  const isInnova=projectId==='innova', config=projectConfig[projectId]||{sections:[],fields:[]}, mine=mySections[projectId]||'';
+  document.querySelector('#project-content').innerHTML=`<div class="resource-detail"><div class="eyebrow">Entrega de equipo</div><h2>${isInnova?'Publica tu cápsula y evidencia':'Entrega tu video-prototipo'}</h2>
+    <p class="lead">Una persona del grupo envía el único video final y la ficha de evidencia. La entrega queda privada y pendiente de revisión docente.</p>
+    <div id="my-submissions"></div>
+    <form id="submission-form" class="detail-panel form-grid">
+      <div class="field"><label for="s-team">Nombre del equipo</label><input id="s-team" name="team_name" required maxlength="160" placeholder="Ej.: Equipo 4"></div>
+      ${config.sections.length?`<div class="field"><label for="s-section">Paralelo</label><select id="s-section" name="section" class="select" required><option value="">Elige el paralelo</option>${config.sections.map(c=>`<option${c===mine?' selected':''}>${esc(c)}</option>`).join('')}</select></div>`:''}
+      <div class="field"><label for="s-members">Integrantes del equipo</label><textarea id="s-members" name="members" rows="4" required placeholder="Ana Pérez ana.perez@mail.pucv.cl&#10;Luis Soto luis.soto@mail.pucv.cl"></textarea><span class="helper">Un nombre por línea. Si agregan el correo PUCV, esa persona podrá responder en el foro como «Equipo autor» y ver la coevaluación de sus pares. Solo los nombres se muestran en la ficha.</span></div>
+      <div class="field"><label for="s-title">Título del trabajo</label><input id="s-title" name="title" required maxlength="180"></div>
+      <div class="field"><label for="s-summary">${isInnova?'Resumen del caso y de la cápsula':'Problema y solución propuesta'}</label><textarea id="s-summary" name="summary" required maxlength="5000"></textarea></div>
+      <fieldset class="field-group"><legend>${isInnova?'Recorrido molecular: del hallazgo al diagnóstico':'Ficha del desafío'}</legend><p class="helper">${isInnova?'Sigan la cadena de la guía ABP: alteración, proceso, efecto molecular, cambio celular, patología, técnica y controles.':'Sigan los bloques del storyboard: problema, personas afectadas, solución, simulación, resultado e indicador, y limitación.'}</p>${config.fields.map(fieldInput).join('')}</fieldset>
+      <div class="field"><label for="s-video">Enlace al único video final (MP4, máximo 5 minutos)</label><input id="s-video" name="video_url" type="url" required placeholder="https://"><span class="helper">Suban el MP4 a una carpeta compartida o plataforma de video y peguen aquí un enlace accesible para la docente.</span></div>
+      <div class="field"><label for="s-evidence-file">Subir ficha de evidencia</label><input id="s-evidence-file" name="evidence_file" type="file" accept=".pdf,.docx,.pptx,.xlsx,.odt,.txt"><span class="helper">PDF, DOCX, PPTX, XLSX, ODT o TXT; máximo 8 MB. Plantilla: <a href="/materiales/${isInnova?'matriz-diagnostica-innova':'ficha-evidencia-incentiva'}.docx" download>${isInnova?'matriz diagnóstica':'Ficha de Evidencia'} (Word)</a>. Si prefieren, pueden entregar una carpeta compartida con enlace HTTPS:</span><input id="s-evidence" name="evidence_url" type="url" placeholder="https://"></div>
+      <div class="field"><label for="s-ai">Declaración de uso de IA</label><textarea id="s-ai" name="ai_declaration" placeholder="Indica qué herramienta usó el equipo y para qué. Si no usaron IA, escríbanlo."></textarea></div>
+      <label class="helper"><input name="has_subtitles" type="checkbox"> El video tiene subtítulos (o texto en pantalla que permite seguirlo sin audio).</label>
+      <label class="helper"><input name="video_length_confirmed" type="checkbox" required> Confirmamos que este es el único video final del equipo y que dura máximo cinco minutos.</label>
+      <label class="helper"><input name="consent" type="checkbox" required> Confirmamos tener autorización para publicar los materiales del equipo y las imágenes o voces identificables que incluimos (<a href="/consentimiento" data-route="/consentimiento">formulario de autorización</a>).</label>
+      <label class="helper"><input name="showcase_consent" type="checkbox"> Opcional: autorizamos mostrar el trabajo en la vitrina abierta a otros cursos y cohortes de la PUCV (solo lectura).</label>
+      <div class="error-text" id="submission-error" role="alert"></div><button class="button project-button" type="submit">Enviar a revisión →</button>
+    </form></div>`;
+  document.querySelector('#submission-form').addEventListener('submit',async event=>{
+    event.preventDefault(); const formElement=event.currentTarget, form=new FormData(formElement), error=document.querySelector('#submission-error'), button=formElement.querySelector('button[type="submit"]');
+    try {
+      const file=document.querySelector('#s-evidence-file').files[0];
+      if(!file&&!form.get('evidence_url')) throw new Error('Sube la ficha o incluye un enlace HTTPS a la carpeta compartida.');
+      if(file&&file.size>8*1024*1024) throw new Error('La ficha debe pesar como máximo 8 MB.');
+      button.disabled=true;
+      const evidence_file_base64=file?await fileToBase64(file):'';
+      const project_fields=Object.fromEntries(config.fields.map(f=>[f.key,form.get(`pf_${f.key}`)||'']));
+      const res=await api('/api/submissions',{method:'POST',body:JSON.stringify({project_id:projectId,team_name:form.get('team_name'),section:form.get('section')||'',members:form.get('members'),title:form.get('title'),summary:form.get('summary'),video_url:form.get('video_url'),evidence_url:form.get('evidence_url'),evidence_file_base64,evidence_filename:file?.name||'',ai_declaration:form.get('ai_declaration'),project_fields,video_length_confirmed:form.get('video_length_confirmed')==='on',consent_confirmed:form.get('consent')==='on',has_subtitles:form.get('has_subtitles')==='on',showcase_consent:form.get('showcase_consent')==='on'})});
+      notify(res.message); formElement.reset(); error.textContent=''; loadMySubmissions(projectId);
+    }
+    catch(err){error.textContent=err.message;}
+    finally{button.disabled=false;}
+  });
+  loadMySubmissions(projectId);
+}
+async function showTickets(projectId) {
+  const root=document.querySelector('#project-content');
+  root.innerHTML=`<div class="resource-detail"><div class="eyebrow">Cierre de cada sesión</div><h2>Tiquetes de salida</h2><p class="lead">Tres preguntas breves y anónimas al final de la clase. La docente agrupa las dudas y responde en la sesión siguiente o con un audio.</p><div id="ticket-items" class="detail-panel"><p class="helper">Cargando…</p></div>
+    <h2>Encuestas</h2><p class="helper">Autoevaluación KPSI al inicio y al cierre, y encuesta de percepción. También son anónimas.</p><div id="survey-items" class="detail-panel"><p class="helper">Cargando…</p></div></div>`;
+  const box=root.querySelector('#ticket-items'), surveyBox=root.querySelector('#survey-items');
+  api(`/api/my-surveys?project=${projectId}`).then(items=>{surveyBox.innerHTML=items.length?items.map(t=>`<article class="submission-status"><div><strong>${esc(t.title)}</strong><span class="helper"> · ${t.answered?'Respondida':t.open?'Abierta hasta '+new Date(t.closes_at*1000).toLocaleString('es-CL',{dateStyle:'short',timeStyle:'short'}):'Cerrada'}</span></div>${t.open&&!t.answered?`<a class="button small" href="/encuesta/${esc(t.code)}" data-route="/encuesta/${esc(t.code)}">Responder →</a>`:''}</article>`).join(''):'<p class="helper">No hay encuestas por ahora.</p>';}).catch(e=>{surveyBox.textContent=e.message;});
+  try{const items=await api(`/api/my-tickets?project=${projectId}`);
+    box.innerHTML=items.length?items.map(t=>`<article class="submission-status"><div><strong>${esc(t.title)}</strong><span class="helper"> · ${t.answered?'Respondido':t.open?'Abierto hasta '+new Date(t.closes_at*1000).toLocaleString('es-CL',{dateStyle:'short',timeStyle:'short'}):'Cerrado'}</span></div>
+      <div class="moderation-actions">${t.open&&!t.answered?`<a class="button small" href="/tiquete/${esc(t.code)}" data-route="/tiquete/${esc(t.code)}">Responder →</a>`:''}${t.feedback_url?`<a class="button secondary small" href="${esc(t.feedback_url)}" target="_blank" rel="noopener noreferrer">Retroalimentación de la docente ↗</a>`:''}</div></article>`).join(''):'<p class="helper">La docente aún no abre tiquetes en esta asignatura.</p>';
+  }catch(e){box.textContent=e.message;}
+}
+async function ticketPage(code) {
+  main.innerHTML='<div class="resource-detail"><div class="loading">Cargando tiquete…</div></div>';
+  let t;
+  try{t=await api(`/api/tickets/${encodeURIComponent(code)}`);}
+  catch(e){main.innerHTML=`<div class="empty-state"><h1>Tiquete no disponible</h1><p>${esc(e.message)} Si aún no entras a la asignatura, usa el código del curso en la portada.</p><a class="button small" href="/" data-route="/">Ir a la portada</a></div>`;return;}
+  const p=PROJECTS[t.project_id], feedback=t.feedback_url?`<a class="button secondary small" href="${esc(t.feedback_url)}" target="_blank" rel="noopener noreferrer">Escuchar la retroalimentación ↗</a>`:'';
+  const head=`<div class="eyebrow">${esc(p.name)} · Tiquete de salida</div><h1>${esc(t.title)}</h1>`;
+  if(t.answered||!t.open){main.innerHTML=`<div class="resource-detail ${t.project_id==='innova'?'innova-theme':''}">${head}<div class="detail-panel"><p>${t.answered?'Ya respondiste este tiquete. ¡Gracias!':'Este tiquete ya cerró.'}</p>${feedback}<p><a class="text-button" href="/${t.project_id}" data-route="/${t.project_id}">Volver a ${esc(p.name)} →</a></p></div></div>`;return;}
+  main.innerHTML=`<div class="resource-detail ${t.project_id==='innova'?'innova-theme':''}">${head}<p class="lead">Tus respuestas son anónimas: la docente ve el texto, no quién lo escribió. Basta con una o dos frases.</p>
+    <form id="ticket-answer" class="detail-panel form-grid">${t.questions.map((q,i)=>`<div class="field"><label for="tq-${i}">${i+1}. ${esc(q)}</label><textarea id="tq-${i}" name="q${i}" maxlength="1500" rows="3" required></textarea></div>`).join('')}
+    <div class="error-text" role="alert"></div><button class="button project-button" type="submit">Enviar respuestas →</button></form></div>`;
+  const form=document.querySelector('#ticket-answer');
+  form.addEventListener('submit',async e=>{e.preventDefault();const button=form.querySelector('button');button.disabled=true;
+    try{const r=await api(`/api/tickets/${encodeURIComponent(code)}/answer`,{method:'POST',body:JSON.stringify({answers:t.questions.map((_,i)=>form.elements[`q${i}`].value)})});notify(r.message);ticketPage(code);}
+    catch(ex){form.querySelector('.error-text').textContent=ex.message;button.disabled=false;}});
+}
+async function surveyPage(code) {
+  main.innerHTML='<div class="resource-detail"><div class="loading">Cargando encuesta…</div></div>';
+  let t;
+  try{t=await api(`/api/surveys/${encodeURIComponent(code)}`);}
+  catch(e){main.innerHTML=`<div class="empty-state"><h1>Encuesta no disponible</h1><p>${esc(e.message)}</p><a class="button small" href="/" data-route="/">Ir a la portada</a></div>`;return;}
+  const p=PROJECTS[t.project_id], theme=t.project_id==='innova'?'innova-theme':'', head=`<div class="eyebrow">${esc(p.name)} · ${t.kind==='kpsi'?'Autoevaluación KPSI':'Encuesta de percepción'}</div><h1>${esc(t.title)}</h1>`;
+  if(t.answered||!t.open){main.innerHTML=`<div class="resource-detail ${theme}">${head}<div class="detail-panel"><p>${t.answered?'Ya respondiste esta encuesta. ¡Gracias!':'Esta encuesta ya cerró.'}</p><a class="text-button" href="/${t.project_id}" data-route="/${t.project_id}">Volver a ${esc(p.name)} →</a></div></div>`;return;}
+  let dimension=null;
+  const rows=t.items.map((item,i)=>{const header=item.dimension!==dimension?`<h2 class="survey-dimension">${esc(item.dimension||'Enunciados')}</h2>`:'';dimension=item.dimension;
+    return `${header}<fieldset class="rubric-row"><legend>${i+1}. ${esc(item.text)}</legend><div class="rubric-levels">${t.scale.map((level,j)=>`<label><input type="radio" name="i${i}" value="${j+1}" required> ${j+1} · ${esc(level)}</label>`).join('')}</div></fieldset>`;}).join('');
+  main.innerHTML=`<div class="resource-detail ${theme}">${head}<p class="lead">${t.kind==='kpsi'?'Marca qué tan bien dominas hoy cada contenido. No es una evaluación: sirve para comparar el inicio con el cierre del proyecto.':'Cuéntanos cómo viviste la experiencia. Tus respuestas ayudan a mejorar el proyecto para la próxima cohorte.'} Las respuestas son anónimas.</p>
+    <form id="survey-answer" class="detail-panel form-grid">${rows}<div class="field"><label for="sv-comment">Comentario (opcional)</label><textarea id="sv-comment" maxlength="1500" rows="3"></textarea></div><div class="error-text" role="alert"></div><button class="button project-button" type="submit">Enviar respuestas →</button></form></div>`;
+  const form=document.querySelector('#survey-answer');
+  form.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(form), button=form.querySelector('button[type="submit"]');button.disabled=true;
+    try{const r=await api(`/api/surveys/${encodeURIComponent(code)}/answer`,{method:'POST',body:JSON.stringify({values:t.items.map((_,i)=>Number(f.get(`i${i}`))),comment:document.querySelector('#sv-comment').value})});notify(r.message);surveyPage(code);}
+    catch(ex){form.querySelector('.error-text').textContent=ex.message;button.disabled=false;}});
+}
+// Icons repeat the meaning of the color, which red/green color blindness can't tell apart.
+const SUBMISSION_STATUS={review:'◷ En revisión docente',approved:'✓ Aprobada',published:'✓ Publicada en el repositorio',rejected:'↺ Devuelta para corregir'};
+async function loadMySubmissions(projectId) {
+  const box=document.querySelector('#my-submissions'); if(!box)return;
+  try{const rows=await api(`/api/my-submissions?project=${projectId}`);
+    box.innerHTML=rows.length?`<section class="detail-panel"><h2>Tus entregas</h2>${rows.map(s=>`<article class="submission-status status-${esc(s.status)}"><div><strong>${esc(s.title)}</strong><span class="helper"> · ${esc(s.team_name)}${s.section?' · '+esc(s.section):''} · ${esc(s.created_at)}</span></div><span class="status-label">${esc(SUBMISSION_STATUS[s.status]||s.status)}</span>${s.review_note?`<p class="helper">Comentario docente: ${esc(s.review_note)}</p>`:''}${s.status==='rejected'?'<p class="helper">Pueden corregir y volver a enviar con el mismo nombre de equipo.</p>':''}</article>`).join('')}</section>`:'';
+  }catch{box.innerHTML='';}
+}
+function showForum(projectId) {
+  const root=document.querySelector('#project-content'), items=resourceCache[projectId]||[];
+  root.innerHTML=`<div class="resource-detail"><div class="eyebrow">Conversación científica</div><h2>Foro</h2><p class="lead">Cada ficha tiene una pregunta guía. Respóndela o pregunta al equipo autor: sus respuestas aparecen destacadas. Los mensajes se revisan antes de publicarse.</p>
+    ${items.length?`<div class="field"><label for="forum-resource">Elige una ficha</label><select id="forum-resource" class="select">${items.map(r=>`<option value="${esc(r.slug)}">${esc(r.title)}${r.comment_count?` (${r.comment_count})`:''}</option>`).join('')}</select></div><div id="forum-content" class="detail-panel"></div>`:'<div class="empty-state">Todavía no hay fichas publicadas.</div>'}</div>`;
+  const select=root.querySelector('#forum-resource'); if(!select)return;
+  const open=()=>mountDiscussion(root.querySelector('#forum-content'),projectId,items.find(r=>r.slug===select.value));
+  select.addEventListener('change',open); open();
+}
+const BADGES={equipo:'Equipo autor',docente:'Docente'};
+function commentThread(comments) {
+  const top=comments.filter(c=>!c.parent_id);
+  if(!top.length) return '<p class="helper">Todavía no hay comentarios publicados. Puedes empezar respondiendo la pregunta guía.</p>';
+  const item=c=>`<article class="comment${c.badge?' badge-'+c.badge:''}"><strong>${esc(c.display_name)}</strong>${c.badge?`<span class="comment-badge">${BADGES[c.badge]||''}</span>`:''}<p>${esc(c.body)}</p></article>`;
+  // Answers from the authoring team and teachers go first inside each thread.
+  const replies=id=>comments.filter(c=>c.parent_id===id).sort((a,b)=>(b.badge?1:0)-(a.badge?1:0));
+  return top.map(c=>`<div class="thread">${item(c)}${replies(c.id).map(r=>`<div class="reply">${item(r)}</div>`).join('')}<button class="text-button" type="button" data-reply="${c.id}" data-name="${esc(c.display_name)}">Responder</button></div>`).join('');
+}
+async function mountDiscussion(box, projectId, resource) {
+  const draw=async()=>{
+    const comments=await api(`/api/projects/${projectId}/resources/${encodeURIComponent(resource.slug)}/comments`);
+    box.innerHTML=`<div class="guide-question"><span class="eyebrow">Pregunta guía</span><p>${esc(resource.guide_question)}</p></div><div class="comment-list">${commentThread(comments)}</div>
+      <form class="form-grid discussion-form"><input type="hidden" name="parent_id" value=""><div class="reply-target helper" hidden></div><div class="field"><label for="comment-body-${resource.id}">Tu respuesta, pregunta o comentario</label><textarea id="comment-body-${resource.id}" name="body" maxlength="1200" required></textarea></div><div class="error-text" role="alert"></div><button class="button small" type="submit">Enviar</button></form>`;
+    const form=box.querySelector('form'), target=form.querySelector('.reply-target');
+    const clearReply=()=>{form.elements.parent_id.value='';target.hidden=true;};
+    box.querySelectorAll('[data-reply]').forEach(b=>b.addEventListener('click',()=>{form.elements.parent_id.value=b.dataset.reply;target.hidden=false;
+      target.innerHTML=`Respondiendo a ${esc(b.dataset.name)} · <button type="button" class="text-button">cancelar</button>`;target.querySelector('button').addEventListener('click',clearReply);form.elements.body.focus();}));
+    form.addEventListener('submit',async e=>{e.preventDefault();const err=form.querySelector('.error-text'), button=form.querySelector('[type="submit"]');button.disabled=true;
+      try{const result=await api('/api/comments',{method:'POST',body:JSON.stringify({project_id:projectId,slug:resource.slug,body:form.elements.body.value,parent_id:form.elements.parent_id.value||null})});
+        notify(result.message);if(result.status==='published'){await draw();return;}form.elements.body.value='';clearReply();err.textContent='';}
+      catch(ex){err.textContent=ex.message;}finally{button.disabled=false;}});
+  };
+  try{await draw();}catch(e){box.innerHTML=`<div class="notice">${esc(e.message)}</div>`;}
+}
+async function mountQuiz(box, resource) {
+  const results=(answers,correct,explanations,score)=>`<p class="quiz-score">Obtuviste ${score} de ${correct.length}.</p>${state.questions.map((q,i)=>`<div class="quiz-question"><strong>${i+1}. ${esc(q.prompt)}</strong><ul class="quiz-options">${q.options.map((o,j)=>`<li class="${j===correct[i]?'is-correct':''}${j===answers[i]&&j!==correct[i]?' is-wrong':''}">${esc(o)}${j===correct[i]?' <span class="helper">· correcta</span>':''}${j===answers[i]?' <span class="helper">· tu respuesta</span>':''}</li>`).join('')}</ul>${explanations[i]?`<p class="helper">${esc(explanations[i])}</p>`:''}</div>`).join('')}`;
+  let state;
+  try{state=await api(`/api/quiz/${resource.id}`);}catch(e){box.textContent=e.message;return;}
+  if(state.attempt){const a=state.attempt;box.innerHTML=results(a.answers,a.correct,a.explanations,a.score);return;}
+  box.innerHTML=`<form class="form-grid">${state.questions.map((q,i)=>`<fieldset class="quiz-question"><legend>${i+1}. ${esc(q.prompt)}</legend>${q.options.map((o,j)=>`<label class="quiz-option"><input type="radio" name="q${i}" value="${j}" required> ${esc(o)}</label>`).join('')}</fieldset>`).join('')}<p class="helper">Solo cuenta el primer intento; después verás las respuestas y su explicación.</p><div class="error-text" role="alert"></div><button class="button small" type="submit">Revisar respuestas</button></form>`;
+  const form=box.querySelector('form');
+  form.addEventListener('submit',async e=>{e.preventDefault();const answers=state.questions.map((_,i)=>Number(new FormData(form).get(`q${i}`)));
+    try{const r=await api(`/api/quiz/${resource.id}`,{method:'POST',body:JSON.stringify({answers})});box.innerHTML=results(answers,r.correct,r.explanations,r.score);}
+    catch(ex){form.querySelector('.error-text').textContent=ex.message;}});
+}
+async function mountPeer(box, resource) {
+  let data;
+  try{data=await api(`/api/peer/${resource.id}`);}catch(e){box.closest('section').remove();return;}
+  const summary=data.summary?`<div class="peer-summary"><h3>${data.is_author?'Lo que dicen sus pares':'Resultados de la coevaluación'}</h3>${data.summary.count?`<p class="helper">${data.summary.count} evaluaciones · promedio general ${data.summary.overall??'—'} de 4</p><table class="code-table"><tbody>${data.summary.averages.map(a=>`<tr><td>${esc(a.label)}</td><td><b>${a.average??'—'}</b></td></tr>`).join('')}</tbody></table>${(data.comments||[]).map(c=>`<article class="comment"><p><b>Fortaleza:</b> ${esc(c.strength)}</p><p><b>Sugerencia:</b> ${esc(c.suggestion)}</p></article>`).join('')}`:'<p class="helper">Aún no hay evaluaciones de pares.</p>'}</div>`:'';
+  if(!data.can_review){box.innerHTML=summary||'<p class="helper">Esta ficha es de tu equipo.</p>';return;}
+  const mine=data.mine||{scores:{},strength:'',suggestion:''};
+  box.innerHTML=`${summary}<form class="form-grid peer-form"><p class="helper">Evalúa con la misma rúbrica que usa la docente. Tu evaluación llega al equipo sin tu nombre; la docente sí la ve.${data.mine?' Ya enviaste una evaluación: puedes corregirla.':''}</p>
+    ${data.rubric.map(c=>`<fieldset class="rubric-row"><legend><b>${esc(c.label)}</b> <span class="helper">${esc(c.hint)}</span></legend><div class="rubric-levels">${data.levels.map((level,i)=>`<label><input type="radio" name="${esc(c.key)}" value="${i+1}" required${mine.scores[c.key]===i+1?' checked':''}> ${i+1} · ${esc(level)}</label>`).join('')}</div></fieldset>`).join('')}
+    <div class="field"><label for="peer-strength-${resource.id}">Una fortaleza del trabajo</label><textarea id="peer-strength-${resource.id}" name="strength" maxlength="1000" required>${esc(mine.strength)}</textarea></div>
+    <div class="field"><label for="peer-suggestion-${resource.id}">Una sugerencia concreta para mejorarlo</label><textarea id="peer-suggestion-${resource.id}" name="suggestion" maxlength="1000" required>${esc(mine.suggestion)}</textarea></div>
+    <div class="error-text" role="alert"></div><button class="button small" type="submit">${data.mine?'Actualizar coevaluación':'Enviar coevaluación'}</button></form>`;
+  const form=box.querySelector('form');
+  form.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(form);
+    try{const r=await api(`/api/peer/${resource.id}`,{method:'POST',body:JSON.stringify({scores:Object.fromEntries(data.rubric.map(c=>[c.key,Number(f.get(c.key))])),strength:f.get('strength'),suggestion:f.get('suggestion')})});notify(r.message);mountPeer(box,resource);}
+    catch(ex){form.querySelector('.error-text').textContent=ex.message;}});
+}
+function videoPanel(resource) {
+  if(!resource.media_url) return '';
+  const captions=resource.has_subtitles?'El equipo declara que el video tiene subtítulos: actívalos con el botón CC del reproductor.':'Este video no declara subtítulos. Si los necesitas, pídelos en el foro o a la docente.';
+  return `<section class="detail-panel"><h2>Video del equipo</h2>${resource.embed_url?`<div class="video-frame"><iframe src="${esc(resource.embed_url)}" title="Video: ${esc(resource.title)}" allow="encrypted-media; picture-in-picture; fullscreen" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`:''}
+    <p class="helper">${captions}</p><a class="text-button" href="${esc(resource.media_url)}" target="_blank" rel="noopener noreferrer">Abrir el video en una pestaña nueva ↗</a></section>`;
+}
+function detailPage(projectId, slug, reader=false) {
+  const p=PROJECTS[projectId], cls=projectId==='innova'?'innova-theme':'';
+  main.innerHTML=`<div class="project-page ${cls}"><a class="back-link" href="/${projectId}" data-route="/${projectId}">← Volver a ${esc(p.name)}</a><div id="detail-container" class="resource-detail"><div class="loading">Cargando ficha…</div></div></div>`;
+  loadResources(projectId).then(()=>{
+    const resource=resourceCache[projectId].find(r=>r.slug===slug), root=document.querySelector('#detail-container');
+    if(!resource){root.innerHTML='<div class="empty-state">No encontramos esta ficha en este proyecto.</div>';return;}
+    const isInnova=projectId==='innova', fields=resource.fields||[], student=Boolean(resource.source_submission_id);
+    const credits=resource.team_name?`<p class="resource-credits">${esc(/^equipo\b/i.test(resource.team_name)?resource.team_name:'Equipo '+resource.team_name)}${resource.section?' · Paralelo '+esc(resource.section):''}${resource.members?.length?`<br><span class="helper">${resource.members.map(esc).join(' · ')}</span>`:''}</p>`:'';
+    const body=fields.length?`<section class="detail-panel"><h2>${isInnova?'Del hallazgo al diagnóstico':'Ficha del desafío'}</h2><dl class="field-list">${fields.map(f=>`<div><dt>${esc(f.label)}</dt><dd>${paragraphs(f.value)}</dd></div>`).join('')}</dl>${resource.ai_declaration?`<p class="helper">Uso de IA declarado por el equipo: ${esc(resource.ai_declaration)}</p>`:''}</section>`
+      :`<section class="detail-panel"><h2>${isInnova?'Caso clínico y antecedentes':'Sobre este desafío'}</h2>${richText(resource.content||resource.summary)}
+      <p class="helper">${isInnova?'Integra alteración molecular, efecto funcional, manifestación clínica y decisión diagnóstica.':'Vincula la necesidad territorial, la evidencia y la viabilidad de la solución.'}</p></section>`;
+    root.innerHTML=`<span class="resource-category">${esc(resource.category)}</span><h1>${esc(resource.title)}</h1>${credits}<p class="lead">${esc(resource.summary)}</p><div class="tags">${resource.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</div>
+      ${videoPanel(resource)}
+      ${body}
+      ${reader?'':`
+      ${resource.quiz_count?'<section class="detail-panel"><h2>Preguntas de control</h2><div id="detail-quiz"><p class="helper">Cargando…</p></div></section>':''}
+      ${student?`<section class="detail-panel"><h2>Ficha de evidencia</h2><a class="button small" href="/api/submissions/${Number(resource.source_submission_id)}/evidence">Descargar ficha del equipo ↧</a></section>`:''}
+      ${resource.has_file?`<section class="detail-panel"><h2>Archivo del material</h2><a class="button small" href="/api/projects/${projectId}/resources/${encodeURIComponent(resource.slug)}/file">Descargar ${esc(resource.file_filename||'archivo del curso')} ↧</a></section>`:''}
+      <section class="detail-panel"><h2>Foro de esta ficha</h2><div id="detail-comments"><p class="helper">Cargando comentarios…</p></div></section>
+      ${student?'<section class="detail-panel"><h2>Coevaluación entre pares</h2><div id="detail-peer"><p class="helper">Cargando…</p></div></section>':''}`}`;
+    if(reader) return;
+    mountDiscussion(document.querySelector('#detail-comments'),projectId,resource);
+    if(resource.quiz_count) mountQuiz(document.querySelector('#detail-quiz'),resource);
+    if(student) mountPeer(document.querySelector('#detail-peer'),resource);
+  }).catch(e=>document.querySelector('#detail-container').innerHTML=`<div class="empty-state">${esc(e.message)}</div>`);
+}
+function login(error='') {
+  const params=new URLSearchParams(location.search), reason=params.get('error');
+  const err=error||(reason==='domain'?'Esta cuenta no está habilitada: usa tu cuenta institucional @mail.pucv.cl o @pucv.cl.':reason==='auth'?'No fue posible completar el acceso. Inténtalo de nuevo.':reason==='google_off'?'El ingreso con Google todavía no está configurado. Usa tu código de ingreso.':reason==='expired'?'El enlace venció o ya fue usado. Solicita uno nuevo.':'');
+  const google=window.APP_GOOGLE_READY, email=window.APP_EMAIL_READY;
+  main.innerHTML=`<section class="login-layout"><div class="login-intro"><div class="eyebrow">Tecnología Médica · PUCV</div><h1>Aprender, explicar y compartir.</h1><p>Accede a los dos proyectos de innovación docente desde un espacio común. Cada proyecto mantiene sus casos, trabajos y conversaciones por separado.</p>
+    <div class="login-benefit"><div class="benefit"><span class="benefit-icon">✓</span><span>Entra con tu cuenta institucional o con el código que entrega la docente.</span></div><div class="benefit"><span class="benefit-icon">✓</span><span>Tus entregas quedan asociadas a tu correo.</span></div><div class="benefit"><span class="benefit-icon">✓</span><span>Los comentarios se revisan antes de hacerse visibles.</span></div></div></div>
+    <div class="login-panel"><span class="eyebrow">Acceso privado</span><h2>Ingresa con PUCV</h2>
+      ${err?`<div class="error-text" role="alert">${esc(err)}</div>`:''}
+      ${google?`<p>Usa tu cuenta Google institucional <strong>@mail.pucv.cl</strong> o <strong>@pucv.cl</strong>.</p><a class="button google-button" href="/auth/google"><span class="google-g" aria-hidden="true">G</span>Continuar con Google PUCV</a>`:''}
+      ${email?`${google?'<div class="login-separator"></div>':''}<form id="magic-form" class="form-grid"><div class="field"><label for="institutional-email">${google?'O recibe un enlace en tu correo':'Correo institucional'}</label><input id="institutional-email" type="email" autocomplete="email" required maxlength="254" placeholder="nombre@mail.pucv.cl"></div><div id="magic-status" class="helper" role="status" aria-live="polite"></div><button class="button ${google?'secondary':''}" type="submit">Enviar enlace de acceso →</button></form><p class="helper">El enlace vence en 15 minutos y solo se puede usar una vez.</p>`:''}
+      <details class="code-panel" ${google||email?'':'open'}><summary>Tengo un código de ingreso</summary><p class="helper">La docente entrega un código personal ligado a tu correo institucional. Sirve aunque no tengas acceso a Google o al correo en este momento.</p><form id="code-form" class="form-grid"><div class="field"><label for="code-email">Correo institucional</label><input id="code-email" type="email" autocomplete="email" required maxlength="254" placeholder="nombre@mail.pucv.cl"></div><div class="field"><label for="code-value">Código de ingreso</label><input id="code-value" class="code-input" required maxlength="20" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX"></div><div class="error-text" id="code-error" role="alert"></div><button class="button ${google||email?'secondary':''}" type="submit">Entrar con código →</button></form></details>
+      <div class="notice">El sitio acepta exclusivamente los dominios institucionales configurados.</div>
+      ${window.APP_DEMO?`<div class="login-separator"></div><details class="demo-panel"><summary>Modo de demostración local</summary><div class="notice warning">Esta entrada solo sirve para revisar el prototipo en este computador. No verifica que la dirección pertenezca a una persona PUCV.</div><form id="demo-form" class="form-grid"><div class="field"><label for="demo-email">Correo institucional de ejemplo</label><input id="demo-email" type="email" placeholder="nombre@mail.pucv.cl" required></div><div class="error-text" id="demo-error" role="alert"></div><button class="button secondary" type="submit">Abrir demostración</button></form></details>`:''}
+      <p class="helper spaced-top">Si tienes problemas con el acceso, contacta al equipo docente del curso. <a href="/privacidad" data-route="/privacidad">Aviso de privacidad</a>.</p></div></section>`;
+  const form=document.querySelector('#demo-form'); if(form) form.addEventListener('submit',async e=>{e.preventDefault();const errorBox=document.querySelector('#demo-error');try{await api('/auth/demo',{method:'POST',body:JSON.stringify({email:document.querySelector('#demo-email').value})});await bootstrap();}catch(ex){errorBox.textContent=ex.message;}});
+  const codeForm=document.querySelector('#code-form'); if(codeForm) codeForm.addEventListener('submit',async e=>{e.preventDefault();const errorBox=document.querySelector('#code-error');const button=codeForm.querySelector('button');button.disabled=true;errorBox.textContent='';try{await api('/auth/code',{method:'POST',body:JSON.stringify({email:document.querySelector('#code-email').value,code:document.querySelector('#code-value').value})});history.replaceState({},'','/');await bootstrap();}catch(ex){errorBox.textContent=ex.message;}finally{button.disabled=false;}});
+  const magicForm=document.querySelector('#magic-form'); if(magicForm) magicForm.addEventListener('submit',async e=>{e.preventDefault();const status=document.querySelector('#magic-status');const button=magicForm.querySelector('button');button.disabled=true;status.textContent='Enviando…';try{const result=await api('/auth/request-link',{method:'POST',body:JSON.stringify({email:document.querySelector('#institutional-email').value})});status.textContent=result.message;magicForm.querySelector('input').value='';}catch(ex){status.textContent=ex.message;}finally{button.disabled=false;}});
+}
+async function moderatorPage() {
+  if(!['admin','editor'].includes(user.role)){main.innerHTML='<div class="empty-state">No tienes permiso para abrir el panel de revisión.</div>';return;}
+  main.innerHTML=`<div class="eyebrow">Gestión docente</div><h1>Materiales y revisión</h1><p class="lead">Carga casos, guías o fichas en el espacio de tu asignatura. Revisa sus accesos y entregas desde este panel.</p>
+    <section class="detail-panel resource-detail"><h2>Agregar material al repositorio</h2><form id="resource-upload-form" class="form-grid">
+      <div class="field"><label for="r-project">Asignatura</label><select id="r-project" class="select" required>${managedProjects.map(id=>`<option value="${id}">${esc(PROJECTS[id].name)} · ${esc(PROJECTS[id].course)}</option>`).join('')}</select></div>
+      <div class="field"><label for="r-title">Título</label><input id="r-title" required maxlength="180"></div>
+      <div class="field"><label for="r-category">Tipo de material</label><input id="r-category" required maxlength="100" placeholder="Desafío · Acceso rural, Caso clínico, Guía…"><span class="helper">Empieza con «Desafío» o «Caso» para que entre en la caja sorpresa.</span></div>
+      <div class="field"><label for="r-summary">Descripción breve</label><textarea id="r-summary" required maxlength="2000"></textarea></div>
+      <div class="field"><label for="r-tags">Palabras clave (separadas por coma)</label><input id="r-tags" maxlength="300"></div>
+      <div class="field"><label for="r-content">Texto del material (opcional)</label><textarea id="r-content" rows="6" maxlength="20000" placeholder="## Problema sociosanitario&#10;Describe el caso o el desafío…&#10;## Barreras de acceso&#10;- Primera barrera&#10;- Segunda barrera"></textarea><span class="helper">Ideal para desafíos y casos escritos: «## » crea un título y «- » una viñeta.</span></div>
+      <div class="field"><label for="r-file">Archivo (opcional si escribiste el texto)</label><input id="r-file" type="file" accept=".pdf,.docx,.pptx,.xlsx,.odt,.txt"><span class="helper">PDF, DOCX, PPTX, XLSX, ODT o TXT; máximo 8 MB. Lo verán solo integrantes autorizados de esta asignatura.</span></div>
+      <label class="helper"><input id="r-draft" type="checkbox"> Guardar como borrador (no lo verán las y los estudiantes hasta publicarlo)</label>
+      <div class="error-text" id="resource-upload-error" role="alert"></div><button class="button" type="submit">Guardar material →</button></form></section>
+    <section class="detail-panel resource-detail"><div class="section-head"><h2>Materiales del repositorio</h2><span class="pill" id="materials-count"></span></div><p class="helper">Corrige títulos, descripciones o el archivo, y retira del catálogo lo que no deba verse. Un material retirado no se borra: se puede volver a publicar.</p><div id="materials-list" class="material-list">Cargando…</div></section>
+    ${accessCodesPanel()}
+    ${ticketsPanel()}
+    ${surveysPanel()}
+    <section class="detail-panel resource-detail"><div class="section-head"><h2>Indicadores para el informe</h2><label><span class="visually-hidden">Asignatura</span><select id="ind-project" class="select">${projectOptions()}</select></label></div><p class="helper">Lo que la propuesta promete medir, calculado con lo que ya registra la plataforma. El plazo de entrega se configura con PUCV_INCENTIVA_DEADLINE / PUCV_INNOVA_DEADLINE (AAAA-MM-DD).</p><div id="indicators" class="helper">Cargando…</div><a class="button secondary small" id="ind-csv" href="#" download>Descargar indicadores (CSV) ↧</a></section>
+    <div id="moderation-content" class="loading">Cargando pendientes…</div>
+    <section class="detail-panel resource-detail"><div class="section-head"><h2>Coevaluación entre pares</h2><a class="button secondary small" href="/api/admin/peer-reviews.csv" download>Descargar todo (CSV) ↧</a></div><p class="helper">Promedios por ficha (1 a 4) con la rúbrica de cada asignatura. El CSV incluye quién evaluó, para revisar la calidad de los comentarios.</p><div id="peer-summary" class="helper">Cargando…</div></section>
+    <section class="detail-panel resource-detail"><div class="section-head"><h2>Integrantes con acceso</h2><span class="pill" id="members-count"></span></div><div id="members-list" class="helper">Cargando…</div></section>
+    ${user.role==='admin'?staffPanel()+privacyPanel():''}
+    ${user.role==='admin'?`<section class="detail-panel resource-detail"><h2>Respaldos</h2><div id="backup-info" class="helper">Cargando…</div><a class="button secondary small" href="/api/admin/backup" download>Descargar respaldo completo (.zip) ↧</a><p class="helper">Incluye la base de datos y todos los archivos subidos. Descárgalo una vez por semana y guárdalo fuera del hosting, por ejemplo en la unidad compartida del proyecto.</p></section>`:''}`;
+  // The panel is long; buttons (not #anchors, which would re-render the route) jump to each section.
+  const toc=document.createElement('nav'); toc.className='admin-toc'; toc.setAttribute('aria-label','Secciones del panel');
+  const headings=[...main.querySelectorAll(':scope > section > h2, :scope > section > .section-head > h2')];
+  toc.innerHTML=headings.map((h,i)=>`<button class="text-button" type="button" data-jump="${i}">${esc(h.textContent)}</button>`).join('')+'<button class="text-button" type="button" data-jump="moderation">Revisión pendiente</button>';
+  toc.addEventListener('click',e=>{const b=e.target.closest('[data-jump]');if(!b)return;(b.dataset.jump==='moderation'?document.querySelector('#moderation-content'):headings[Number(b.dataset.jump)]).scrollIntoView({behavior:'smooth',block:'start'});});
+  main.querySelector('.lead').after(toc);
+  bindAccessCodes();
+  bindMembers();
+  loadMembers();
+  bindMaterials();
+  loadMaterials();
+  bindTickets();
+  loadPeerSummary();
+  bindSurveys();
+  bindIndicators();
+  if(user.role==='admin'){bindStaff();bindPrivacy();}
+  if(user.role==='admin') loadBackups();
+  const uploadForm=document.querySelector('#resource-upload-form');
+  uploadForm.addEventListener('submit',async event=>{event.preventDefault();const button=uploadForm.querySelector('button');const error=document.querySelector('#resource-upload-error');const file=document.querySelector('#r-file').files[0], content=document.querySelector('#r-content').value;if(!file&&!content.trim()){error.textContent='Escribe el texto del material o adjunta un archivo.';return;}if(file&&file.size>8*1024*1024){error.textContent='El archivo debe pesar como máximo 8 MB.';return;}button.disabled=true;error.textContent='Guardando…';try{const result=await api('/api/admin/resources',{method:'POST',body:JSON.stringify({project_id:document.querySelector('#r-project').value,title:document.querySelector('#r-title').value,category:document.querySelector('#r-category').value,summary:document.querySelector('#r-summary').value,tags:document.querySelector('#r-tags').value,content,status:document.querySelector('#r-draft').checked?'draft':'published',filename:file?.name||'',file_base64:file?await fileToBase64(file):''})});notify(result.message);uploadForm.reset();error.textContent='';resourceCache={};loadMaterials();}catch(ex){error.textContent=ex.message;}finally{button.disabled=false;}});
+  try {
+    const pending=await api('/api/admin/pending'), root=document.querySelector('#moderation-content');
+    const accessRequests=pending.access_requests.map(r=>`<article class="moderation-card"><div class="resource-top"><span class="resource-category ${r.project_id==='innova'?'wine-chip':'blue-chip'}">${esc(PROJECTS[r.project_id].name)}</span><span class="helper">${esc(r.email)}</span></div><h2>${esc(r.display_name)} solicita acceso</h2><div class="moderation-actions"><button class="button small" data-review="access_request" data-id="${r.id}" data-decision="approve">Autorizar</button><button class="button secondary small" data-review="access_request" data-id="${r.id}" data-decision="reject">Rechazar</button></div></article>`).join('');
+    const submissions=pending.submissions.map(s=>`<article class="moderation-card"><div class="resource-top"><span class="resource-category ${s.project_id==='innova'?'wine-chip':'blue-chip'}">${esc(PROJECTS[s.project_id].name)}</span><span class="helper">${esc(s.team_name)}${s.section?' · '+esc(s.section):''} · ${esc(s.email)}</span></div><h2>${esc(s.title)}</h2>${s.members.length?`<p class="helper">Integrantes: ${s.members.map(esc).join(' · ')}</p>`:''}<p>${esc(s.summary)}</p>${s.fields.length?`<dl class="field-list compact">${s.fields.map(f=>`<div><dt>${esc(f.label)}</dt><dd>${esc(f.value)}</dd></div>`).join('')}</dl>`:''}${s.video_url?`<p class="helper">Video único (máx. 5 min): <a href="${esc(s.video_url)}" target="_blank" rel="noopener noreferrer">Abrir video ↗</a></p>`:''}${s.evidence_url?`<p class="helper">Ficha: <a href="${esc(s.evidence_url)}" target="_blank" rel="noopener noreferrer">Abrir ficha ↗</a></p>`:''}${s.evidence_storage_key?`<p><a class="button secondary small" href="/api/submissions/${Number(s.id)}/evidence">Descargar ficha adjunta ↧</a></p>`:''}<p class="helper">Autorización de publicación confirmada por el equipo.</p>${s.ai_declaration?`<p class="helper">Declaración de IA: ${esc(s.ai_declaration)}</p>`:'<p class="helper">Sin declaración de uso de IA.</p>'}<div class="field"><label for="note-${s.id}">Comentario para el equipo si se devuelve (opcional)</label><textarea id="note-${s.id}" maxlength="2000" rows="2"></textarea></div><div class="moderation-actions"><button class="button small" data-review="submission" data-id="${s.id}" data-decision="publish">Aprobar y publicar</button><button class="button secondary small" data-review="submission" data-id="${s.id}" data-decision="reject">Devolver</button></div></article>`).join('');
+    const comments=pending.comments.map(c=>`<article class="moderation-card"><div class="resource-top"><span class="resource-category ${c.project_id==='innova'?'wine-chip':'blue-chip'}">${esc(PROJECTS[c.project_id].name)}</span><span class="helper">${esc(c.display_name)} · ${esc(c.email)}</span></div><h2>${c.parent_id?'Respuesta':'Comentario'} en: ${esc(c.resource_title)}${c.badge==='equipo'?' <span class="comment-badge">Equipo autor</span>':''}</h2><p>${esc(c.body)}</p><div class="moderation-actions"><button class="button small" data-review="comment" data-id="${c.id}" data-decision="publish">Publicar</button><button class="button secondary small" data-review="comment" data-id="${c.id}" data-decision="hide">Ocultar</button></div></article>`).join('');
+    root.className='moderation-list';
+    root.innerHTML=`<section><div class="section-head"><h2>Solicitudes de acceso</h2><span class="pill">${pending.access_requests.length} pendientes</span></div>${accessRequests||'<div class="empty-state">No hay solicitudes de acceso por revisar.</div>'}</section><section><div class="section-head"><h2>Entregas</h2><span class="pill">${pending.submissions.length} pendientes</span></div>${submissions||'<div class="empty-state">No hay entregas por revisar.</div>'}</section><section><div class="section-head"><h2>Comentarios</h2><span class="pill">${pending.comments.length} pendientes</span></div>${comments||'<div class="empty-state">No hay comentarios por revisar.</div>'}</section>`;
+    root.addEventListener('click',async e=>{const button=e.target.closest('[data-review]');if(!button)return;button.disabled=true;try{await api('/api/admin/review',{method:'POST',body:JSON.stringify({kind:button.dataset.review,id:Number(button.dataset.id),decision:button.dataset.decision,note:document.querySelector(`#note-${button.dataset.id}`)?.value||''})});notify('Revisión guardada.');moderatorPage();}catch(ex){notify(ex.message);button.disabled=false;}});
+  }catch(e){document.querySelector('#moderation-content').textContent=e.message;}
+}
+function projectOptions() { return managedProjects.map(id=>`<option value="${id}">${esc(PROJECTS[id].name)} · ${esc(PROJECTS[id].course)}</option>`).join(''); }
+function accessCodesPanel() {
+  return `<section class="detail-panel resource-detail"><h2>Acceso de estudiantes</h2><p class="helper">Dos formas de dar acceso sin depender de correos ni de TI. El código del curso se proyecta en clase; los códigos personales sirven como respaldo cuando alguien no puede entrar con Google.</p>
+    <div class="code-columns">
+      <form id="join-code-form" class="form-grid"><h3>Código del curso</h3>
+        <div class="field"><label for="jc-project">Asignatura</label><select id="jc-project" class="select">${projectOptions()}</select></div>
+        <div class="field" id="jc-section-field"><label for="jc-section">Paralelo que registra</label><select id="jc-section" class="select"></select></div>
+        <div class="field"><label for="jc-label">Etiqueta (sesión, grupo…)</label><input id="jc-label" maxlength="80" placeholder="Sesión 2 de noviembre"></div>
+        <div class="field"><label for="jc-days">Vigencia (días)</label><input id="jc-days" type="number" min="1" max="180" value="14"></div>
+        <div class="field"><label for="jc-max">Máximo de usos (opcional)</label><input id="jc-max" type="number" min="1" max="1000" placeholder="Ej.: 45"></div>
+        <div class="error-text" id="jc-error" role="alert"></div><button class="button" type="submit">Crear código del curso</button>
+        <div id="join-code-list" class="code-list"></div></form>
+      <form id="access-code-form" class="form-grid"><h3>Códigos personales de ingreso</h3>
+        <div class="field"><label for="ac-project">Asignatura que habilitan</label><select id="ac-project" class="select">${projectOptions()}</select></div>
+        <div class="field"><label for="ac-emails">Correos institucionales (uno por línea o separados por coma)</label><textarea id="ac-emails" rows="4" placeholder="nombre.apellido@mail.pucv.cl"></textarea></div>
+        <div class="field"><label for="ac-days">Vigencia (días)</label><input id="ac-days" type="number" min="1" max="180" value="30"></div>
+        <div class="error-text" id="ac-error" role="alert"></div><button class="button" type="submit">Generar códigos</button>
+        <div id="access-code-result"></div></form>
+    </div></section>`;
+}
+function bindAccessCodes() {
+  const joinForm=document.querySelector('#join-code-form'), accessForm=document.querySelector('#access-code-form');
+  const projectSelect=document.querySelector('#jc-project');
+  const fillSections=()=>{const sections=projectConfig[projectSelect.value]?.sections||[];document.querySelector('#jc-section-field').hidden=!sections.length;
+    document.querySelector('#jc-section').innerHTML=`<option value="">Sin paralelo</option>${sections.map(c=>`<option>${esc(c)}</option>`).join('')}`;};
+  projectSelect.addEventListener('change',fillSections); fillSections();
+  loadJoinCodes();
+  joinForm.addEventListener('submit',async e=>{e.preventDefault();const error=document.querySelector('#jc-error');error.textContent='';
+    try{const result=await api('/api/admin/join-codes',{method:'POST',body:JSON.stringify({project_id:document.querySelector('#jc-project').value,section:document.querySelector('#jc-section').value,label:document.querySelector('#jc-label').value,days:document.querySelector('#jc-days').value,max_uses:document.querySelector('#jc-max').value})});notify(`Código creado: ${result.code}`);loadJoinCodes();}
+    catch(ex){error.textContent=ex.message;}});
+  joinForm.addEventListener('click',async e=>{const button=e.target.closest('[data-disable-code]');if(!button)return;button.disabled=true;
+    try{await api('/api/admin/join-codes/disable',{method:'POST',body:JSON.stringify({id:Number(button.dataset.disableCode)})});loadJoinCodes();}catch(ex){notify(ex.message);button.disabled=false;}});
+  accessForm.addEventListener('submit',async e=>{e.preventDefault();const error=document.querySelector('#ac-error'), box=document.querySelector('#access-code-result');error.textContent='';
+    try{const result=await api('/api/admin/access-codes',{method:'POST',body:JSON.stringify({project_id:document.querySelector('#ac-project').value,emails:document.querySelector('#ac-emails').value,days:document.querySelector('#ac-days').value})});
+      const csv='correo,codigo\n'+result.codes.map(c=>`${c.email},${c.code}`).join('\n');
+      const href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+      box.innerHTML=`<div class="notice warning">Guarda o descarga estos códigos ahora: por seguridad no se vuelven a mostrar. Generar uno nuevo para un correo anula el anterior.</div><a class="button secondary small" href="${href}" download="codigos-ingreso.csv">Descargar CSV ↧</a><table class="code-table"><thead><tr><th>Correo</th><th>Código</th></tr></thead><tbody>${result.codes.map(c=>`<tr><td>${esc(c.email)}</td><td><code>${esc(c.code)}</code></td></tr>`).join('')}</tbody></table>${result.invalid.length?`<p class="helper">Omitidos (no son correos PUCV válidos): ${result.invalid.map(esc).join(', ')}</p>`:''}${result.refused?.length?`<p class="helper">No se generaron para ${result.refused.map(esc).join(', ')}: son cuentas docentes o participan en otra asignatura. La administración global puede emitirlos.</p>`:''}`;
+      document.querySelector('#ac-emails').value='';}
+    catch(ex){error.textContent=ex.message;}});
+}
+async function loadJoinCodes() {
+  const box=document.querySelector('#join-code-list'); if(!box)return;
+  try{const codes=await api('/api/admin/join-codes');
+    box.innerHTML=codes.length?codes.map(c=>`<div class="code-item ${c.valid?'':'inactive'}"><code>${esc(c.code)}</code><span class="helper">${esc(PROJECTS[c.project_id].name)}${c.section?' · '+esc(c.section):''}${c.label?' · '+esc(c.label):''} · ${c.uses}${c.max_uses?'/'+c.max_uses:''} usos · ${c.valid?'vence '+new Date(c.expires_at*1000).toLocaleDateString('es-CL'):'inactivo'}</span>${c.valid?`<button class="text-button" type="button" data-disable-code="${c.id}">Desactivar</button>`:''}</div>`).join(''):'<p class="helper">Aún no hay códigos del curso.</p>';
+  }catch(ex){box.textContent=ex.message;}
+}
+async function loadMembers() {
+  const box=document.querySelector('#members-list'); if(!box)return;
+  try{const members=await api('/api/admin/members');
+    document.querySelector('#members-count').textContent=`${members.length} activos`;
+    box.innerHTML=members.length?`<table class="code-table"><thead><tr><th>Persona</th><th>Asignatura</th><th>Paralelo</th><th></th></tr></thead><tbody>${members.map(m=>`<tr><td>${esc(m.display_name)}<br><span class="helper">${esc(m.email)}</span></td><td>${esc(PROJECTS[m.project_id].name)}</td><td>${esc(m.section||'—')}</td><td><button class="text-button" type="button" data-revoke="${m.id}">Retirar acceso</button></td></tr>`).join('')}</tbody></table>`:'<p class="helper">Todavía no hay estudiantes con acceso.</p>';
+  }catch(ex){box.textContent=ex.message;}
+}
+function bindMembers() {
+  document.querySelector('#members-list').addEventListener('click',async e=>{const button=e.target.closest('[data-revoke]');if(!button||!confirm('¿Retirar el acceso de esta persona a la asignatura?'))return;button.disabled=true;
+    try{await api('/api/admin/review',{method:'POST',body:JSON.stringify({kind:'membership',id:Number(button.dataset.revoke),decision:'revoke'})});notify('Acceso retirado.');loadMembers();}catch(ex){notify(ex.message);button.disabled=false;}});
+}
+async function loadMaterials() {
+  const box=document.querySelector('#materials-list'); if(!box)return;
+  try{const items=await api('/api/admin/resources');
+    document.querySelector('#materials-count').textContent=`${items.filter(r=>r.status==='published').length} publicados · ${items.filter(r=>r.status!=='published').length} retirados`;
+    box.innerHTML=items.length?items.map(r=>{const live=r.status==='published';return `<details class="material-item${live?'':' retired'}"><summary><span class="resource-category ${r.project_id==='innova'?'wine-chip':'blue-chip'}">${esc(PROJECTS[r.project_id].name)}</span><strong>${esc(r.title)}</strong><span class="status-label">${live?'Publicado':'Borrador o retirado'}</span></summary>
+      <form class="form-grid" data-material="${r.id}" data-status="${esc(r.status)}">
+        <div class="field"><label for="m-title-${r.id}">Título</label><input id="m-title-${r.id}" name="title" required maxlength="180" value="${esc(r.title)}"></div>
+        <div class="field"><label for="m-category-${r.id}">Tipo de material</label><input id="m-category-${r.id}" name="category" required maxlength="100" value="${esc(r.category)}"></div>
+        <div class="field"><label for="m-summary-${r.id}">Descripción breve</label><textarea id="m-summary-${r.id}" name="summary" required maxlength="2000">${esc(r.summary)}</textarea></div>
+        ${r.source_submission_id?'':`<div class="field"><label for="m-content-${r.id}">Texto del material</label><textarea id="m-content-${r.id}" name="content" rows="8" maxlength="20000">${esc(r.content)}</textarea></div>`}
+        <div class="field"><label for="m-tags-${r.id}">Palabras clave (separadas por coma)</label><input id="m-tags-${r.id}" name="tags" maxlength="300" value="${esc(r.tags.join(', '))}"></div>
+        <div class="field"><label for="m-file-${r.id}">${r.has_file?`Reemplazar archivo (actual: ${esc(r.file_filename)})`:'Adjuntar archivo (opcional)'}</label><input id="m-file-${r.id}" name="file" type="file" accept=".pdf,.docx,.pptx,.xlsx,.odt,.txt"></div>
+        <div class="field"><label for="m-guide-${r.id}">Pregunta guía del foro</label><textarea id="m-guide-${r.id}" name="guide_question" rows="2" maxlength="400" placeholder="${esc(r.default_guide_question)}">${esc(r.guide_question)}</textarea><span class="helper">Si la dejas vacía se usa la pregunta general de la asignatura.</span></div>
+        <div class="field"><label for="m-quiz-${r.id}">Preguntas de control (hasta 3)</label><textarea id="m-quiz-${r.id}" name="quiz" rows="6" placeholder="¿Qué control descarta contaminación en la PCR?&#10;* Control negativo sin templado&#10;Control positivo&#10;Control de extracción&#10;Explicación: si el control sin templado amplifica, hay contaminación.&#10;&#10;(deja una línea en blanco entre preguntas)">${esc(r.quiz)}</textarea><span class="helper">Pregunta en la primera línea, una opción por línea, la correcta con *. «Explicación:» es opcional. Si cambias las preguntas se borran las respuestas anteriores.</span></div>
+        ${r.quiz_stats?quizStatsBlock(r.quiz_stats):''}
+        ${r.source_submission_id?'<p class="helper">Proviene de una entrega de estudiantes; la ficha y el video del equipo no cambian.</p>':''}
+        <div class="error-text" role="alert"></div>
+        <div class="moderation-actions"><button class="button small" type="submit">Guardar cambios</button><button class="button secondary small" type="submit" data-set-status="${live?'draft':'published'}">${live?'Retirar del catálogo':'Publicar'}</button></div>
+      </form></details>`;}).join(''):'<p class="helper">Todavía no hay materiales.</p>';
+  }catch(ex){box.textContent=ex.message;}
+}
+function bindMaterials() {
+  document.querySelector('#materials-list').addEventListener('submit',async e=>{
+    const form=e.target.closest('[data-material]'); if(!form)return; e.preventDefault();
+    const status=e.submitter?.dataset.setStatus||form.dataset.status, error=form.querySelector('.error-text'), file=form.elements.file.files[0];
+    if(status==='draft'&&!confirm('¿Retirar este material del catálogo? Las y los estudiantes dejarán de verlo; podrás volver a publicarlo.'))return;
+    if(file&&file.size>8*1024*1024){error.textContent='El archivo debe pesar como máximo 8 MB.';return;}
+    form.querySelectorAll('button').forEach(b=>b.disabled=true); error.textContent='';
+    try{const result=await api('/api/admin/resources/update',{method:'POST',body:JSON.stringify({id:Number(form.dataset.material),title:form.elements.title.value,category:form.elements.category.value,summary:form.elements.summary.value,tags:form.elements.tags.value,guide_question:form.elements.guide_question.value,quiz:form.elements.quiz.value,...(form.elements.content?{content:form.elements.content.value}:{}),status,filename:file?.name||'',file_base64:file?await fileToBase64(file):''})});
+      notify(result.message);resourceCache={};loadMaterials();}
+    catch(ex){error.textContent=ex.message;form.querySelectorAll('button').forEach(b=>b.disabled=false);}
+  });
+}
+function quizStatsBlock(stats) {
+  return `<div class="quiz-stats"><strong>Resultados: ${stats.respondents} ${stats.respondents===1?'persona respondió':'personas respondieron'}</strong>${stats.questions.map((q,i)=>`<div><p>${i+1}. ${esc(q.prompt)} · <b>${q.correct_share===null?'—':Math.round(q.correct_share*100)+'% correcto'}</b></p><ul>${q.options.map(o=>`<li${o.correct?' class="is-correct"':''}>${esc(o.text)} · ${o.count}</li>`).join('')}</ul></div>`).join('')}</div>`;
+}
+function ticketsPanel() {
+  const first=managedProjects[0], questions=projectConfig[first]?.ticket_questions||[];
+  return `<section class="detail-panel resource-detail"><h2>Tiquetes de salida</h2><p class="helper">Al cierre de cada sesión, proyecta el QR: el curso responde las tres preguntas estándar en 5 minutos, de forma anónima. Descarga el CSV para agrupar las dudas y deja aquí el enlace al audio de retroalimentación.</p>
+    <form id="ticket-form" class="form-grid">
+      <div class="field"><label for="tk-project">Asignatura</label><select id="tk-project" class="select">${projectOptions()}</select></div>
+      <div class="field"><label for="tk-title">Sesión</label><input id="tk-title" maxlength="120" required placeholder="Fase 1 · sesión del 9 de noviembre"></div>
+      <div class="field"><label for="tk-hours">Abierto durante (horas)</label><input id="tk-hours" type="number" min="1" max="336" value="24"></div>
+      <details class="code-panel"><summary>Preguntas (las tres estándar del proyecto)</summary>${[0,1,2].map(i=>`<div class="field"><label for="tk-q${i}">Pregunta ${i+1}</label><textarea id="tk-q${i}" rows="2" maxlength="400">${esc(questions[i]||'')}</textarea></div>`).join('')}</details>
+      <div class="error-text" id="tk-error" role="alert"></div><button class="button" type="submit">Crear tiquete y mostrar QR</button></form>
+    <div id="ticket-list" class="material-list"></div></section>`;
+}
+function showQr(ticket) {
+  const overlay=document.createElement('div');
+  overlay.className='qr-overlay'; overlay.setAttribute('role','dialog'); overlay.setAttribute('aria-label','Código QR del tiquete');
+  overlay.innerHTML=`<div class="qr-card"><div class="eyebrow">${esc(PROJECTS[ticket.project_id].name)} · ${esc(ticket.label||'Tiquete de salida')}</div><h2>${esc(ticket.title)}</h2><img src="${esc(ticket.qr||`/api/admin/tickets/${ticket.id}/qr.svg`)}" alt="Código QR para responder"><p class="qr-url">${esc(ticket.url)}</p><button class="button secondary small" type="button">Cerrar</button></div>`;
+  const close=()=>{overlay.remove();document.removeEventListener('keydown',onKey);};
+  const onKey=e=>{if(e.key==='Escape')close();};
+  overlay.addEventListener('click',e=>{if(e.target===overlay||e.target.closest('button'))close();});
+  document.addEventListener('keydown',onKey);
+  document.body.append(overlay); overlay.querySelector('button').focus();
+}
+let ticketCache=[];
+async function loadTickets() {
+  const box=document.querySelector('#ticket-list'); if(!box)return;
+  try{ticketCache=await api('/api/admin/tickets');
+    box.innerHTML=ticketCache.length?ticketCache.map(t=>`<details class="material-item${t.open?'':' retired'}"><summary><span class="resource-category ${t.project_id==='innova'?'wine-chip':'blue-chip'}">${esc(PROJECTS[t.project_id].name)}</span><strong>${esc(t.title)}</strong><span class="status-label">${t.answers} respuestas · ${t.open?'abierto':'cerrado'}</span></summary>
+      <div class="form-grid ticket-body"><p class="helper">Código <code>${esc(t.code)}</code> · ${esc(t.url)}</p>
+        <div class="moderation-actions"><button class="button small" type="button" data-qr="${t.id}">Mostrar QR</button><button class="button secondary small" type="button" data-answers="${t.id}">Ver respuestas</button><a class="button secondary small" href="/api/admin/tickets/${t.id}/responses.csv" download>CSV ↧</a></div>
+        <div class="ticket-answers" id="ticket-answers-${t.id}"></div>
+        <form class="form-grid" data-ticket="${t.id}"><div class="field"><label for="tk-feedback-${t.id}">Enlace al audio o video de retroalimentación</label><input id="tk-feedback-${t.id}" name="feedback_url" type="url" placeholder="https://" value="${esc(t.feedback_url)}"></div>
+          <div class="moderation-actions"><button class="button small" type="submit">Guardar enlace</button><button class="button secondary small" type="submit" data-active="${t.active?0:1}">${t.active?'Cerrar tiquete':'Reabrir'}</button></div></form></div></details>`).join(''):'<p class="helper">Aún no hay tiquetes.</p>';
+  }catch(ex){box.textContent=ex.message;}
+}
+function bindTickets() {
+  const form=document.querySelector('#ticket-form'), project=document.querySelector('#tk-project');
+  project.addEventListener('change',()=>{(projectConfig[project.value]?.ticket_questions||[]).forEach((q,i)=>{document.querySelector(`#tk-q${i}`).value=q;});});
+  form.addEventListener('submit',async e=>{e.preventDefault();const error=document.querySelector('#tk-error');error.textContent='';
+    try{const r=await api('/api/admin/tickets',{method:'POST',body:JSON.stringify({project_id:project.value,title:document.querySelector('#tk-title').value,hours:document.querySelector('#tk-hours').value,questions:[0,1,2].map(i=>document.querySelector(`#tk-q${i}`).value)})});
+      document.querySelector('#tk-title').value='';await loadTickets();const created=ticketCache.find(t=>t.code===r.code);if(created)showQr(created);}
+    catch(ex){error.textContent=ex.message;}});
+  const list=document.querySelector('#ticket-list');
+  list.addEventListener('click',async e=>{const qrButton=e.target.closest('[data-qr]'), answersButton=e.target.closest('[data-answers]');
+    if(qrButton) showQr(ticketCache.find(t=>t.id===Number(qrButton.dataset.qr)));
+    if(answersButton){const box=document.querySelector(`#ticket-answers-${answersButton.dataset.answers}`);
+      try{const data=await api(`/api/admin/tickets/${answersButton.dataset.answers}/responses`);
+        box.innerHTML=data.answers.length?data.questions.map((q,i)=>`<div class="ticket-question"><strong>${i+1}. ${esc(q)}</strong><ul>${data.answers.map(a=>`<li>${esc(a[i]||'')}</li>`).join('')}</ul></div>`).join(''):'<p class="helper">Todavía no hay respuestas.</p>';}
+      catch(ex){box.textContent=ex.message;}}});
+  list.addEventListener('submit',async e=>{const f=e.target.closest('[data-ticket]');if(!f)return;e.preventDefault();
+    const ticket=ticketCache.find(t=>t.id===Number(f.dataset.ticket)), active=e.submitter?.dataset.active!==undefined?e.submitter.dataset.active==='1':Boolean(ticket.active);
+    try{await api('/api/admin/tickets/update',{method:'POST',body:JSON.stringify({id:ticket.id,feedback_url:f.elements.feedback_url.value,active})});notify('Tiquete actualizado.');loadTickets();}
+    catch(ex){notify(ex.message);}});
+  loadTickets();
+}
+function surveysPanel() {
+  const first=managedProjects[0];
+  return `<section class="detail-panel resource-detail"><h2>Encuestas: KPSI y percepción</h2><p class="helper">Aplica el KPSI de entrada antes de las sesiones y el de salida al cierre: los resultados muestran el cambio por enunciado. La encuesta de percepción va al final. Todas son anónimas y se responden con QR.</p>
+    <form id="survey-form" class="form-grid">
+      <div class="code-columns"><div class="field"><label for="sv-project">Asignatura</label><select id="sv-project" class="select">${projectOptions()}</select></div>
+      <div class="field"><label for="sv-kind">Tipo</label><select id="sv-kind" class="select"><option value="kpsi">KPSI (autoevaluación 1 a 4)</option><option value="percepcion">Percepción (acuerdo 1 a 5)</option></select></div></div>
+      <div class="code-columns"><div class="field"><label for="sv-moment">Momento</label><select id="sv-moment" class="select"><option value="entrada">Entrada</option><option value="salida">Salida</option><option value="cierre">Cierre</option></select></div>
+      <div class="field"><label for="sv-hours">Abierta durante (horas)</label><input id="sv-hours" type="number" min="1" max="720" value="72"></div></div>
+      <div class="field"><label for="sv-title">Título</label><input id="sv-title" maxlength="120" placeholder="KPSI de entrada · Fase 1"></div>
+      <details class="code-panel"><summary>Enunciados (plantilla editable)</summary><p class="helper">Una línea por enunciado; las líneas que empiezan con # agrupan por dimensión. Para comparar entrada y salida, usa los mismos enunciados.<span id="sv-note"></span></p><textarea id="sv-items" rows="10">${esc(projectConfig[first]?.survey_templates?.kpsi||'')}</textarea></details>
+      <div class="error-text" id="sv-error" role="alert"></div><button class="button" type="submit">Crear encuesta y mostrar QR</button></form>
+    <div id="survey-list" class="material-list"></div></section>`;
+}
+let surveyCache=[];
+async function loadSurveys() {
+  const box=document.querySelector('#survey-list'); if(!box)return;
+  try{surveyCache=await api('/api/admin/surveys');
+    box.innerHTML=surveyCache.length?surveyCache.map(t=>`<details class="material-item${t.open?'':' retired'}"><summary><span class="resource-category ${t.project_id==='innova'?'wine-chip':'blue-chip'}">${esc(PROJECTS[t.project_id].name)}</span><strong>${esc(t.title)}</strong><span class="status-label">${t.answers} respuestas · ${t.open?'abierta':'cerrada'}</span></summary>
+      <div class="form-grid ticket-body"><p class="helper">${t.kind==='kpsi'?'KPSI':'Percepción'} · ${esc(t.moment)} · código <code>${esc(t.code)}</code></p>
+        <div class="moderation-actions"><button class="button small" type="button" data-survey-qr="${t.id}">Mostrar QR</button><button class="button secondary small" type="button" data-survey-results="${t.id}">Ver resultados</button><a class="button secondary small" href="/api/admin/surveys/${t.id}/responses.csv" download>CSV ↧</a><button class="button secondary small" type="button" data-survey-toggle="${t.id}" data-active="${t.active?0:1}">${t.active?'Cerrar':'Reabrir'}</button></div>
+        <div id="survey-results-${t.id}"></div></div></details>`).join(''):'<p class="helper">Aún no hay encuestas.</p>';
+  }catch(ex){box.textContent=ex.message;}
+}
+function bindSurveys() {
+  const project=document.querySelector('#sv-project'), kind=document.querySelector('#sv-kind'), items=document.querySelector('#sv-items');
+  const fill=()=>{items.value=projectConfig[project.value]?.survey_templates?.[kind.value]||'';
+    document.querySelector('#sv-note').textContent=kind.value==='percepcion'?' Plantilla provisional: reemplázala por los ítems del instrumento de Bravo Cofré et al. (2024) cuando lo tengas.':project.value==='incentiva'?' No hay un KPSI de Incentiva en los archivos del curso: revisa estos enunciados antes de aplicarlo.':' Enunciados del KPSI de TEM 1133 (Certamen I).';};
+  project.addEventListener('change',fill); kind.addEventListener('change',fill); fill();
+  document.querySelector('#survey-form').addEventListener('submit',async e=>{e.preventDefault();const error=document.querySelector('#sv-error');error.textContent='';
+    try{const r=await api('/api/admin/surveys',{method:'POST',body:JSON.stringify({project_id:project.value,kind:kind.value,moment:document.querySelector('#sv-moment').value,title:document.querySelector('#sv-title').value,hours:document.querySelector('#sv-hours').value,items:items.value})});
+      document.querySelector('#sv-title').value='';await loadSurveys();const created=surveyCache.find(t=>t.code===r.code);if(created)showQr({...created,qr:`/api/admin/surveys/${created.id}/qr.svg`,label:'Encuesta'});}
+    catch(ex){error.textContent=ex.message;}});
+  document.querySelector('#survey-list').addEventListener('click',async e=>{const qrB=e.target.closest('[data-survey-qr]'), resB=e.target.closest('[data-survey-results]'), toggle=e.target.closest('[data-survey-toggle]');
+    if(qrB){const t=surveyCache.find(x=>x.id===Number(qrB.dataset.surveyQr));showQr({...t,qr:`/api/admin/surveys/${t.id}/qr.svg`,label:'Encuesta'});}
+    if(toggle){try{await api('/api/admin/surveys/update',{method:'POST',body:JSON.stringify({id:Number(toggle.dataset.surveyToggle),active:toggle.dataset.active==='1'})});loadSurveys();}catch(ex){notify(ex.message);}}
+    if(resB){const box=document.querySelector(`#survey-results-${resB.dataset.surveyResults}`);
+      try{const r=await api(`/api/admin/surveys/${resB.dataset.surveyResults}/results`);
+        box.innerHTML=`<p class="helper">${r.respondents} respuestas${r.baseline?` · comparada con «${esc(r.baseline.title)}» (${r.baseline.respondents} respuestas)`:''} · escala 1 a ${r.scale.length}</p>
+          <table class="code-table"><thead><tr><th>Enunciado</th><th>Promedio</th>${r.baseline?'<th>Entrada</th><th>Cambio</th>':''}<th>Niveles altos</th></tr></thead><tbody>${r.items.map(i=>`<tr><td>${esc(i.text)}<br><span class="helper">${esc(i.dimension)}</span></td><td><b>${i.mean??'—'}</b></td>${r.baseline?`<td>${i.baseline_mean??'—'}</td><td class="${i.delta>0?'delta-up':i.delta<0?'delta-down':''}">${i.delta===null||i.delta===undefined?'—':(i.delta>0?'+':'')+i.delta}</td>`:''}<td>${i.top_share===null?'—':Math.round(i.top_share*100)+'%'}</td></tr>`).join('')}</tbody></table>
+          ${r.comments.length?`<div class="ticket-question"><strong>Comentarios</strong><ul>${r.comments.map(c=>`<li>${esc(c)}</li>`).join('')}</ul></div>`:''}`;}
+      catch(ex){box.textContent=ex.message;}}});
+  loadSurveys();
+}
+function bindIndicators() {
+  const select=document.querySelector('#ind-project'), box=document.querySelector('#indicators'), link=document.querySelector('#ind-csv');
+  const load=async()=>{link.href=`/api/admin/indicators.csv?project=${select.value}`;
+    try{const rows=await api(`/api/admin/indicators?project=${select.value}`);let group='';
+      box.innerHTML=`<table class="code-table"><tbody>${rows.map(r=>{const head=r.group!==group?`<tr><th colspan="2">${esc(r.group)}</th></tr>`:'';group=r.group;return `${head}<tr><td>${esc(r.label)}</td><td><b>${esc(r.value)}</b></td></tr>`;}).join('')}</tbody></table>`;}
+    catch(ex){box.textContent=ex.message;}};
+  select.addEventListener('change',load); load();
+}
+function staffPanel() {
+  return `<section class="detail-panel resource-detail"><h2>Equipo docente</h2><p class="helper">Asigna quién revisa cada asignatura sin tocar la configuración del servidor. El cambio rige de inmediato.</p>
+    <form id="staff-form" class="join-row"><label class="visually-hidden" for="st-email">Correo</label><input id="st-email" type="email" required placeholder="nombre@pucv.cl"><label class="visually-hidden" for="st-project">Asignatura</label><select id="st-project" class="select">${Object.keys(PROJECTS).map(id=>`<option value="${id}">${esc(PROJECTS[id].name)}</option>`).join('')}</select><button class="button small" type="submit">Asignar</button></form>
+    <div id="staff-list" class="helper">Cargando…</div></section>`;
+}
+async function loadStaff() {
+  const box=document.querySelector('#staff-list');
+  try{const d=await api('/api/admin/staff');
+    const rows=[...d.admins.map(e=>`<tr><td>${esc(e)}</td><td>Administración global</td><td class="helper">servidor</td></tr>`),
+      ...d.configured.map(r=>`<tr><td>${esc(r.email)}</td><td>${esc(PROJECTS[r.project_id].name)}</td><td class="helper">servidor</td></tr>`),
+      ...d.assigned.map(r=>`<tr><td>${esc(r.email)}</td><td>${esc(PROJECTS[r.project_id].name)}</td><td><button class="text-button" type="button" data-staff-remove="${esc(r.email)}" data-project="${r.project_id}">Quitar</button></td></tr>`)];
+    box.innerHTML=`<table class="code-table"><thead><tr><th>Correo</th><th>Rol</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table><p class="helper">Los marcados «servidor» se cambian en las variables PUCV_ADMIN_EMAILS y PUCV_*_ADMINS del hosting.</p>`;
+  }catch(ex){box.textContent=ex.message;}
+}
+function bindStaff() {
+  document.querySelector('#staff-form').addEventListener('submit',async e=>{e.preventDefault();
+    try{const r=await api('/api/admin/staff',{method:'POST',body:JSON.stringify({email:document.querySelector('#st-email').value,project_id:document.querySelector('#st-project').value})});notify(r.message);document.querySelector('#st-email').value='';loadStaff();}catch(ex){notify(ex.message);}});
+  document.querySelector('#staff-list').addEventListener('click',async e=>{const b=e.target.closest('[data-staff-remove]');if(!b)return;
+    try{await api('/api/admin/staff',{method:'POST',body:JSON.stringify({email:b.dataset.staffRemove,project_id:b.dataset.project,action:'remove'})});loadStaff();}catch(ex){notify(ex.message);}});
+  loadStaff();
+}
+function privacyPanel() {
+  return `<section class="detail-panel resource-detail"><h2>Datos personales (Ley 21.719)</h2>
+    <div class="code-columns">
+      <form id="person-form" class="form-grid"><h3>Solicitud de una persona</h3><div class="field"><label for="pp-email">Correo</label><input id="pp-email" type="email" required placeholder="nombre@mail.pucv.cl"></div>
+        <div class="moderation-actions"><button class="button secondary small" type="submit" data-person="export">Descargar sus datos (JSON)</button><button class="button secondary small" type="submit" data-person="delete">Eliminar sus datos…</button></div>
+        <p class="helper">Eliminar borra su cuenta, comentarios, coevaluaciones y entregas no publicadas, y quita su nombre de los trabajos publicados de su equipo. Las respuestas anónimas no se pueden ligar a la persona.</p><div class="error-text" role="alert"></div></form>
+      <form id="cohort-form" class="form-grid"><h3>Cierre de cohorte</h3><p class="helper">Al terminar el semestre: anonimiza todas las cuentas de estudiantes, borra entregas no publicadas, quita los nombres de los integrantes y retira del catálogo los trabajos sin autorización de vitrina. Antes guarda un respaldo completo en el servidor.</p>
+        <div class="field"><label for="cohort-confirm">Escribe CERRAR COHORTE</label><input id="cohort-confirm" autocomplete="off"></div><div class="error-text" role="alert"></div><button class="button secondary small" type="submit">Cerrar cohorte</button></form>
+    </div></section>`;
+}
+function bindPrivacy() {
+  const person=document.querySelector('#person-form');
+  person.addEventListener('submit',async e=>{e.preventDefault();const email=document.querySelector('#pp-email').value.trim().toLowerCase(), error=person.querySelector('.error-text');error.textContent='';
+    if(e.submitter?.dataset.person==='export'){location.href=`/api/admin/person?email=${encodeURIComponent(email)}`;return;}
+    const confirmEmail=prompt(`Esto no se puede deshacer. Escribe de nuevo el correo para eliminar los datos de ${email}:`);if(confirmEmail===null)return;
+    try{const r=await api('/api/admin/person/delete',{method:'POST',body:JSON.stringify({email,confirm:confirmEmail})});notify(r.message);person.reset();}catch(ex){error.textContent=ex.message;}});
+  const cohort=document.querySelector('#cohort-form');
+  cohort.addEventListener('submit',async e=>{e.preventDefault();const error=cohort.querySelector('.error-text');
+    if(!confirm('¿Cerrar la cohorte? Las cuentas de estudiantes quedarán anonimizadas.'))return;
+    try{const r=await api('/api/admin/cohort/close',{method:'POST',body:JSON.stringify({confirm:document.querySelector('#cohort-confirm').value})});notify(r.message);error.textContent=r.message;}catch(ex){error.textContent=ex.message;}});
+}
+async function loadPeerSummary() {
+  const box=document.querySelector('#peer-summary'); if(!box)return;
+  try{const rows=await api('/api/admin/peer-summary');
+    box.innerHTML=rows.length?`<table class="code-table"><thead><tr><th>Ficha</th><th>Evaluaciones</th><th>Promedio</th><th>Por criterio</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.title)}<br><span class="helper">${esc(r.team_name)}${r.section?' · '+esc(r.section):''} · ${esc(PROJECTS[r.project_id].name)}</span></td><td>${r.count}</td><td><b>${r.overall??'—'}</b></td><td class="helper">${r.averages.map(a=>`${esc(a.label)}: ${a.average??'—'}`).join('<br>')}</td></tr>`).join('')}</tbody></table>`:'<p class="helper">Aún no hay coevaluaciones. Aparecen cuando el curso evalúa las fichas publicadas de otros equipos.</p>';
+  }catch(ex){box.textContent=ex.message;}
+}
+async function loadBackups() {
+  const box=document.querySelector('#backup-info'); if(!box)return;
+  try{const info=await api('/api/admin/backups'), last=info.backups[0];
+    box.innerHTML=info.enabled?`Copia automática de la base cada ${info.every_hours} h (se guardan las últimas ${info.keep}). ${last?`Última: ${new Date(last.created_at*1000).toLocaleString('es-CL')} · ${(last.size/1024).toFixed(0)} KB.`:'Aún no se genera la primera.'}`:'Las copias automáticas están desactivadas (APP_BACKUP_HOURS=0).';
+  }catch(ex){box.textContent=ex.message;}
+}
+const HELP=[
+  ['Entrar',[
+    ['¿Cómo entro?','Con «Continuar con Google PUCV» y tu cuenta @mail.pucv.cl. Si no funciona, usa el código personal que te entrega la docente en «Tengo un código de ingreso».'],
+    ['Entré, pero no veo mi asignatura','Escribe el código del curso que la docente muestra en clase en «¿Tienes el código del curso?», en la portada. Entras de inmediato y queda registrado tu paralelo.'],
+    ['¿Puedo usar mi Gmail personal?','No. Solo se aceptan cuentas institucionales @mail.pucv.cl o @pucv.cl.']]],
+  ['Trabajar',[
+    ['¿Dónde está nuestro desafío o caso?','En la pestaña «Desafíos» (Incentiva) o «Casos y recursos» (Innova). En Incentiva, «Sacar un desafío» sortea uno.'],
+    ['¿Cómo hacemos el video?','Abre «Guía para un video final» en tu asignatura o el kit imprimible: storyboard de seis bloques, herramientas gratuitas y uso ético de IA.'],
+    ['¿Qué son los tiquetes de salida y las encuestas?','Preguntas breves al cierre de una sesión o del proyecto. Son anónimas: la docente ve las respuestas, no quién las escribió. Se responden con el QR o desde «Tiquetes y encuestas».']]],
+  ['Entregar',[
+    ['¿Quién entrega?','Una persona por equipo, en «Entregar trabajo». Si escriben el correo PUCV de cada integrante junto a su nombre, todo el equipo puede responder en el foro como «Equipo autor».'],
+    ['¿Qué se entrega?','El enlace al único video final (MP4, máximo 5 minutos), la ficha de evidencia (archivo o enlace), los campos de la asignatura, la declaración de IA y la confirmación de las autorizaciones de imagen y voz.'],
+    ['Nos devolvieron la entrega','Lean el comentario de la docente en «Tus entregas», corrijan y vuelvan a enviarla con el mismo nombre de equipo.']]],
+  ['Después de publicar',[
+    ['¿Qué hacemos cuando nuestra ficha se publica?','Respondan las preguntas del foro: sus respuestas aparecen destacadas como «Equipo autor». También verán la coevaluación de sus pares, sin nombres.'],
+    ['¿Cómo coevalúo?','Abre la ficha de otro equipo y completa «Coevaluación entre pares»: cinco criterios de 1 a 4, una fortaleza y una sugerencia. Puedes corregirla después.']]],
+  ['Datos y privacidad',[
+    ['¿Quién ve lo que publicamos?','Solo las cuentas autorizadas de la asignatura. Si el equipo marca la vitrina, también otros cursos PUCV en modo lectura.'],
+    ['Quiero que borren mis datos','Pídelo a la docente: puede descargarte todo lo que hay sobre ti o eliminarlo. Más detalle en el aviso de privacidad.']]],
+];
+function helpPage() {
+  main.innerHTML=`<article class="resource-detail legal-page"><a class="back-link" data-route="/" href="/">← Volver al inicio</a><div class="eyebrow">Ayuda</div><h1>Cómo usar el repositorio</h1>
+    <p class="lead">Respuestas cortas a lo que más se pregunta. Si algo no funciona, escribe en el foro de tu asignatura o a la docente.</p>
+    ${HELP.map(([group,items])=>`<section class="detail-panel"><h2>${esc(group)}</h2>${items.map(([q,a])=>`<details class="help-item"><summary>${esc(q)}</summary><p class="detail-content">${esc(a)}</p></details>`).join('')}</section>`).join('')}
+    <p class="helper">Materiales: <a href="/kit" data-route="/kit">kit de producción</a> · <a href="/materiales/ficha-evidencia-incentiva.docx" download>Ficha de Evidencia (Word)</a> · <a href="/materiales/matriz-diagnostica-innova.docx" download>matriz diagnóstica (Word)</a> · <a href="/consentimiento" data-route="/consentimiento">autorización de imagen y voz</a> · <a href="/privacidad" data-route="/privacidad">aviso de privacidad</a>.</p></article>`;
+}
+function kitPage(projectId) {
+  const p=PROJECTS[projectId], innova=projectId==='innova';
+  const boxes=STORYBOARD.map(([time,incentiva,innovaLabel],i)=>`<article class="kit-block"><div class="kit-block-head"><b>${i+1}. ${esc(innova?innovaLabel:incentiva)}</b><span>${time}</span></div><div class="kit-frame" aria-hidden="true"></div><p class="kit-lines">Qué se ve: ________________________________<br>Qué se escucha o se lee: _____________________</p></article>`).join('');
+  main.innerHTML=`<article class="resource-detail kit-page project-page ${innova?'innova-theme':''}"><a class="back-link no-print" data-route="/" href="/">← Volver al inicio</a>
+    <div class="eyebrow">${esc(p.name)} · Kit de producción</div><h1>Un video final de máximo 5 minutos</h1>
+    <p class="lead">Storyboard, especificaciones, guía de grabación con celular y uso ético de IA. Imprímelo o guárdalo como PDF para el equipo.</p>
+    <p class="no-print"><button class="button small" type="button" id="print-kit">Imprimir</button> <a class="button secondary small" href="/materiales/kit-${projectId}.pdf" download>Descargar PDF ↧</a> <a class="button secondary small" href="/materiales/${innova?'matriz-diagnostica-innova':'ficha-evidencia-incentiva'}.docx" download>Plantilla de ${innova?'matriz diagnóstica':'Ficha de Evidencia'} (Word) ↧</a> <a class="text-button" href="/kit/${innova?'incentiva':'innova'}" data-route="/kit/${innova?'incentiva':'innova'}">Ver el kit de ${innova?'Incentiva':'Innova'}</a></p>
+    <section class="detail-panel"><h2>1. Storyboard en 6 bloques</h2><p class="helper">Equipo: ____________________ · Título: ________________________________ · Bloques y tiempos de la propuesta del proyecto (puede moverse ±15 s por bloque).</p><div class="kit-grid">${boxes}</div></section>
+    <section class="detail-panel kit-break"><h2>2. Especificaciones del archivo final</h2><ul class="legal-list">
+      <li><b>Un solo archivo MP4</b> (H.264) por equipo, <b>horizontal 16:9</b>, 1080p (mínimo 720p), <b>máximo 5:00</b>.</li>
+      <li><b>Audio limpio:</b> la voz se entiende sin subir el volumen; música de fondo muy baja o ninguna mientras se habla.</li>
+      <li><b>Subtítulos</b> incrustados o en archivo .srt. Los automáticos de YouTube, CapCut o Clipchamp sirven si el equipo los revisa entero.</li>
+      <li><b>Créditos al final:</b> integrantes, fuentes de imágenes y música (con su licencia) y la declaración de IA.</li>
+      <li>Subirlo como <b>no listado</b> a YouTube o a una carpeta compartida, y probar el enlace en una ventana privada antes de entregarlo.</li>
+    </ul></section>
+    <section class="detail-panel"><h2>3. Grabar con el celular</h2><ol class="legal-list">
+      <li>Celular en <b>horizontal</b> y lente limpio.</li>
+      <li>Luz de frente a quien habla (una ventana sirve); nunca una ventana detrás.</li>
+      <li>Apoyar el celular o usar trípode; si se mueve, que sea lento.</li>
+      <li>Planos cortos (10–20 s). Grabar 3 segundos antes y después de cada toma para editar cómodo.</li>
+      <li>Voz en un lugar silencioso y con el micrófono a un palmo; la narración se puede grabar aparte.</li>
+      <li>Revisar el resultado con audífonos antes de editar.</li>
+      <li>${innova?'Mostrar el modelo 3D o el prototipo de cerca y en movimiento, con una mano o un objeto que dé escala.':'Simular la solución con personas, maqueta o pantallas: que se vea a alguien usándola.'}</li>
+    </ol></section>
+    <section class="detail-panel"><h2>4. Uso ético de la IA</h2>
+      <div class="kit-columns"><div><h3>Se puede</h3><ul class="legal-list"><li>Fondos, íconos, transiciones o una escena ilustrativa breve.</li><li>Subtítulos o transcripción automática, revisados.</li><li>Ordenar ideas o mejorar la redacción del guion, revisada por el equipo.</li></ul></div>
+      <div><h3>No se puede</h3><ul class="legal-list"><li>Generar la evidencia, los datos, las citas o las conclusiones.</li><li>Usar datos, fotos o voces de pacientes o personas reales sin autorización.</li><li>Presentar como propio lo que hizo la herramienta.</li></ul></div></div>
+      <p class="detail-content">Verifiquen cada cita y cada dato con la fuente original: la IA inventa referencias con frecuencia.</p>
+      <h3>Declaración del equipo (va en los créditos y en el formulario de entrega)</h3>
+      <table class="consent-table"><thead><tr><th>Herramienta</th><th>Para qué la usamos</th><th>Qué revisamos o corregimos</th></tr></thead><tbody>${'<tr><td></td><td></td><td></td></tr>'.repeat(3)}</tbody></table>
+      <p class="detail-content">Declaramos que el problema, la evidencia, el análisis y las conclusiones son del equipo, y que revisamos todo lo producido con IA. Firmas: ____________________________________________</p></section>
+    <section class="detail-panel"><h2>5. Antes de entregar</h2><ul class="check-list">
+      <li>☐ Un solo video, de máximo 5 minutos, que abre en una ventana privada.</li><li>☐ Subtítulos revisados.</li><li>☐ ${innova?'Alteración, proceso, efecto, técnica y controles explicados.':'Problema, personas afectadas, solución, simulación, indicador y limitación.'}</li>
+      <li>☐ Ficha de evidencia lista (archivo o enlace).</li><li>☐ Declaración de IA completa.</li><li>☐ Autorizaciones de imagen y voz firmadas (<a href="/consentimiento" data-route="/consentimiento">formulario</a>).</li><li>☐ Sin datos de pacientes ni de personas reales identificables sin permiso.</li></ul></section>
+  </article>`;
+  document.querySelector('#print-kit').addEventListener('click',()=>window.print());
+}
+function privacyPage() {
+  main.innerHTML=`<article class="resource-detail legal-page"><a class="back-link" data-route="/" href="/">← Volver al inicio</a><div class="eyebrow">Datos personales</div><h1>Aviso de privacidad</h1>
+    <div class="notice warning no-print">Versión preliminar (31 de octubre de 2026), pendiente de validación por el equipo docente. Los plazos de conservación se confirmarán antes de abrir el repositorio a otros cursos.</div>
+    <section class="detail-panel"><h2>Quién es responsable</h2><p class="detail-content">El equipo docente de los proyectos Incentiva en el Aula e Innova en el Aula de la Escuela de Tecnología Médica PUCV administra este repositorio. Las consultas y solicitudes sobre tus datos se dirigen a la docente de tu asignatura, por el Aula Virtual o por correo institucional.</p></section>
+    <section class="detail-panel"><h2>Qué datos se usan y para qué</h2><ul class="legal-list">
+      <li><b>Cuenta:</b> correo institucional y nombre (el que entrega Google o el que se deduce del correo). Sirven para darte acceso a tu asignatura.</li>
+      <li><b>Asignatura y paralelo:</b> para mostrarte solo los materiales de tu curso y ordenar las entregas.</li>
+      <li><b>Entregas:</b> equipo, integrantes, título, resumen, campos del proyecto, enlaces al video y a la ficha, archivos adjuntos y declaración de uso de IA. Se usan para la revisión y retroalimentación docente.</li>
+      <li><b>Comentarios del foro:</b> se revisan antes de publicarse.</li>
+      <li><b>Preguntas de control y coevaluación:</b> la docente ve tus respuestas agregadas y quién hizo cada coevaluación; el equipo evaluado recibe los puntajes y comentarios sin tu nombre.</li>
+      <li><b>Tiquetes de salida y encuestas (KPSI y percepción):</b> son anónimos. Solo se registra que ya respondiste, en una tabla separada que no se puede cruzar con el contenido de tu respuesta.</li>
+      <li><b>Registros técnicos:</b> la dirección IP de los intentos de ingreso fallidos se guarda como máximo 24 horas para impedir el abuso. La sesión usa una sola cookie técnica (12 horas). No hay publicidad ni analítica de terceros.</li>
+    </ul><p class="detail-content">Los informes de los proyectos usan solo cifras agregadas, sin identificar a personas.</p></section>
+    <section class="detail-panel"><h2>Quién puede verlos</h2><ul class="legal-list">
+      <li>La docente y el equipo de apoyo de cada asignatura ven las entregas y los integrantes de su curso.</li>
+      <li>Una entrega aprobada se publica solo para las cuentas autorizadas de la misma asignatura. Nada se publica abiertamente en internet.</li>
+      <li>Si el equipo lo autoriza expresamente, su trabajo aparece en la vitrina de solo lectura para otras cuentas PUCV (otros cursos y cohortes).</li>
+      <li>Si el video está en YouTube, se reproduce con el modo de privacidad mejorada (youtube-nocookie.com).</li>
+      <li>Proveedores: el servicio de hosting donde funciona el sitio y, si ingresas con Google, Google para verificar tu cuenta institucional.</li>
+    </ul></section>
+    <section class="detail-panel"><h2>Cuánto tiempo se guardan</h2><p class="detail-content">Mientras dure el proyecto y el semestre siguiente, para su evaluación. Al cerrar la cohorte, las cuentas de estudiantes se anonimizan, se borran las entregas no publicadas y los nombres de integrantes, y solo quedan visibles los trabajos que su equipo autorizó para la vitrina. Las respuestas anónimas se conservan como cifras agregadas.</p></section>
+    <section class="detail-panel"><h2>Tus derechos</h2><p class="detail-content">Puedes pedir acceso a tus datos (se entregan en un archivo), su corrección o su eliminación, y oponerte a que una entrega tuya se publique (Ley 19.628 y Ley 21.719). Si retiras la autorización de uso de tu imagen o voz, el video se retira del catálogo; la evaluación ya realizada no cambia.</p><p class="detail-content">Para incluir imágenes o voces identificables en un video, el equipo usa el <a href="/consentimiento" data-route="/consentimiento">formulario de autorización de imagen y voz</a>.</p></section>
+  </article>`;
+}
+function consentPage() {
+  const rows=Array.from({length:8},()=>'<tr><td></td><td></td><td></td><td></td></tr>').join('');
+  main.innerHTML=`<article class="resource-detail legal-page consent-form"><a class="back-link no-print" data-route="/" href="/">← Volver al inicio</a>
+    <div class="eyebrow">Tecnología Médica · PUCV</div><h1>Autorización de uso de imagen y voz</h1><p class="lead">Video final del equipo · Incentiva en el Aula / Innova en el Aula</p>
+    <p class="no-print"><button class="button small" type="button" id="print-consent">Imprimir</button> <a class="button secondary small" href="/materiales/consentimiento.pdf" download>Descargar PDF ↧</a></p>
+    <section class="detail-panel"><p class="consent-line">Asignatura: ☐ Incentiva en el Aula (Metodología de la Investigación) &nbsp; ☐ Innova en el Aula (Fundamentos de Diagnóstico Molecular)</p>
+      <p class="consent-line">Equipo: ______________________ &nbsp; Paralelo: ______________ &nbsp; Título del trabajo: ________________________________</p></section>
+    <section class="detail-panel"><h2>Autorizo que mi imagen o mi voz, tal como aparecen en el video del equipo, se usen para:</h2><ul class="check-list">
+      <li>☐ La evaluación por el equipo docente de la asignatura (necesario para entregar).</li>
+      <li>☐ Su publicación en el repositorio del curso, visible solo para cuentas PUCV autorizadas de la asignatura.</li>
+      <li>☐ Su uso como ejemplo con futuras cohortes del mismo curso.</li>
+      <li>☐ La difusión académica del proyecto (presentaciones e informes), sin datos de contacto.</li>
+    </ul><p class="detail-content">Puedo marcar solo algunas opciones. Puedo retirar esta autorización en cualquier momento escribiendo a la docente; el video se retirará del repositorio y del material de difusión pendiente. El retiro no cambia la evaluación ya realizada.</p>
+    <p class="detail-content">Si en el video aparecen personas que no integran el equipo (por ejemplo, en un role-play), cada una firma este formulario. No se incluyen datos de pacientes reales.</p></section>
+    <table class="consent-table"><thead><tr><th>Nombre completo</th><th>Correo institucional</th><th>Opciones autorizadas</th><th>Firma y fecha</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="helper">El equipo conserva el formulario firmado y entrega una copia a la docente junto con el video. Más información en el <a href="/privacidad" data-route="/privacidad">aviso de privacidad</a>.</p>
+  </article>`;
+  document.querySelector('#print-consent').addEventListener('click',()=>window.print());
+}
+async function render() {
+  header();
+  const path=currentPath();
+  // Privacy and consent pages are readable before signing in.
+  if(path==='/privacidad') return privacyPage();
+  if(path==='/consentimiento') return consentPage();
+  if(path==='/ayuda') return helpPage();
+  const kit=path.match(/^\/kit(?:\/(incentiva|innova))?$/);
+  if(kit) return kitPage(kit[1]||'incentiva');
+  const ticket=path.match(/^\/(tiquete|encuesta)\/([A-Za-z0-9-]{4,12})$/);
+  if(!user){ if(ticket){try{sessionStorage.setItem('afterLogin',path);}catch{}} return login(); }
+  if(ticket) return ticket[1]==='tiquete'?ticketPage(ticket[2]):surveyPage(ticket[2]);
+  if(path==='/') return home();
+  if(path==='/admin') return moderatorPage();
+  const detail=path.match(/^\/(incentiva|innova)\/recurso\/([^/]+)$/);
+  if(detail&&!activeProjects.includes(detail[1])&&readerProjects.includes(detail[1])) return detailPage(detail[1],decodeURIComponent(detail[2]),true);
+  if(detail&&!activeProjects.includes(detail[1])&&user.role!=='admin') return accessDeniedPage(detail[1]);
+  if(detail) return detailPage(detail[1],decodeURIComponent(detail[2]));
+  const project=path.match(/^\/(incentiva|innova)(?:\/.*)?$/);
+  if(project&&!activeProjects.includes(project[1])&&readerProjects.includes(project[1])) return projectPage(project[1],true);
+  if(project&&!activeProjects.includes(project[1])&&user.role!=='admin') return accessDeniedPage(project[1]);
+  if(project) return projectPage(project[1]);
+  return home();
+}
+async function bootstrap() {
+  try { const state=await api('/api/me'); user=state.user; activeProjects=state.active_projects||[]; pendingProjects=state.pending_projects||[]; managedProjects=state.managed_projects||[]; projectConfig=state.project_config||{}; mySections=state.my_sections||{}; readerProjects=state.reader_projects||[]; window.APP_DEMO=state.demo; window.APP_EMAIL_READY=state.email_ready; window.APP_GOOGLE_READY=state.google_ready; }
+  catch { user=null; }
+  // Sign-in always lands on "/", so a QR-opened ticket is restored here after logging in.
+  if(user){try{const next=sessionStorage.getItem('afterLogin');if(next){sessionStorage.removeItem('afterLogin');if(currentPath()==='/')history.replaceState({},'',next);}}catch{}}
+  render();
+}
+bootstrap();

@@ -1,0 +1,60 @@
+services:
+  - type: web
+    name: repositorio-proyectos-tm
+    runtime: python
+    plan: starter
+    region: ohio
+    buildCommand: "python3 -m py_compile server.py qr.py"
+    healthCheckPath: /api/me
+    startCommand: "python3 server.py"
+    disk:
+      name: repository-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 10000
+      - key: APP_DB_PATH
+        value: /var/data/repository.sqlite3
+      - key: APP_UPLOAD_DIR
+        value: /var/data/submissions_files
+      - key: APP_BACKUP_DIR
+        value: /var/data/backups
+      - key: APP_BASE_URL
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_SECURITY
+        value: starttls
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: PUCV_ADMIN_EMAILS
+        sync: false
+      - key: PUCV_INCENTIVA_ADMINS
+        sync: false
+      - key: PUCV_INNOVA_ADMINS
+        sync: false
+      - key: PUCV_EMAIL_DOMAINS
+        value: mail.pucv.cl,pucv.cl
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: PUCV_OPEN_PROJECTS
+        sync: false
+      - key: PUCV_INCENTIVA_DEADLINE
+        sync: false
+      - key: PUCV_INNOVA_DEADLINE
+        sync: false
+      - key: TRUST_PROXY
+        value: "1"
+      - key: APP_DEMO_AUTH
+        value: "0"

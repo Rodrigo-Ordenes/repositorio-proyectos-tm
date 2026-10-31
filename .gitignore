@@ -1,0 +1,20 @@
+# Course material with personal data (KPSI answers, application forms, rosters) never leaves this computer.
+# The app only needs seeds/casos_innova.json; refresh it with `python3 server.py actualizar-casos`.
+Innova en el aula 2S 2026/
+Proyecto de innovacion metodologia de la investigacion/
+Propuesta_apoyo_audiovisual_repositorio_TM.pdf
+*.xlsx
+*.xls
+
+# Runtime data and backups
+data/
+backups/
+*.sqlite3
+*.sqlite3-*
+_respaldo_*/
+
+__pycache__/
+.DS_Store
+
+# Office lock files
+~$*
