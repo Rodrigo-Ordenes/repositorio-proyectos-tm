@@ -11,10 +11,15 @@ jobs:
         with:
           python-version: "3.12"
       - name: Herramientas de las pruebas
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq sqlite3 lsof xxd
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sqlite3 lsof xxd
       - name: Compilar
-        run: python3 -m py_compile server.py qr.py
+        run: |
+          python3 -m py_compile server.py qr.py
       - name: Pruebas de punta a punta
-        run: bash pruebas/ejecutar.sh
+        run: |
+          bash pruebas/ejecutar.sh
       - name: Paleta accesible
-        run: python3 herramientas/verificar_paleta.py | tail -1 | grep -q "fallas: 0"
+        run: |
+          python3 herramientas/verificar_paleta.py | tail -1 | grep -q "fallas: 0"
