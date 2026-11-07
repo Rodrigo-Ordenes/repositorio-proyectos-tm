@@ -2381,7 +2381,15 @@ class App(BaseHTTPRequestHandler):
             project = str(payload.get("project_id", ""))
             if project not in self.managed_projects(user): return self.json({"error": "No tienes permiso para esta asignatura."}, 403)
             title = str(payload.get("title", "")).strip()[:120]
-            raw_questions = payload.get("questions") if isinstance(payload.get("questions"), list) else []
+            if str(payload.get("questions_text", "")).strip():
+                # Questions pasted from Word or an e-mail: one per line; numbering and bullets are removed.
+                pasted = [re.sub(r"^\s*(?:\d+[.)]|[-–•*])\s*", "", line).strip() for line in str(payload["questions_text"]).splitlines()]
+                pasted = [q for q in pasted if q]
+                if len(pasted) > 5: return self.json({"error": f"Pegaste {len(pasted)} preguntas: el máximo es 5 preguntas por tiquete."}, 400)
+                if any(len(q) > 400 for q in pasted): return self.json({"error": "Cada pregunta puede tener hasta 400 caracteres."}, 400)
+                raw_questions = pasted
+            else:
+                raw_questions = payload.get("questions") if isinstance(payload.get("questions"), list) else []
             questions = [str(q).strip()[:400] for q in raw_questions if str(q).strip()][:5]
             if not title: return self.json({"error": "Ponle un nombre a la sesión (por ejemplo, «Fase 1 · sesión 3»)."}, 400)
             kind = "previa" if payload.get("kind") == "previa" else "salida"

@@ -735,6 +735,7 @@ function ticketsPanel() {
       <div class="field"><label for="tk-title">Sesión</label><input id="tk-title" maxlength="120" required placeholder="Fase 1 · sesión del 9 de noviembre"></div>
       <div class="field"><label for="tk-hours">Abierto durante (horas)</label><input id="tk-hours" type="number" min="1" max="336" value="24"></div>
       <details class="code-panel"><summary>Preguntas (las tres estándar del proyecto)</summary>${[0,1,2].map(i=>`<div class="field"><label for="tk-q${i}">Pregunta ${i+1}</label><textarea id="tk-q${i}" rows="2" maxlength="400">${esc(questions[i]||'')}</textarea></div>`).join('')}</details>
+      <details class="code-panel"><summary>Pegar varias preguntas a la vez</summary><div class="field"><label for="tk-paste">Una pregunta por línea (hasta 5)</label><textarea id="tk-paste" rows="5" aria-describedby="tk-paste-help"></textarea><p class="helper" id="tk-paste-help">Si escribes aquí, estas preguntas reemplazan a las de arriba. La numeración o las viñetas copiadas desde Word o un correo se quitan solas.</p></div></details>
       <div class="error-text" id="tk-error" role="alert"></div><button class="button" type="submit">Crear tiquete y mostrar QR</button></form>
     <div id="ticket-list" class="material-list"></div></section>`;
 }
@@ -765,8 +766,8 @@ function bindTickets() {
   const fillQuestions=()=>{const c=projectConfig[project.value]||{};(kind.value==='previa'?c.pre_questions:c.ticket_questions||[]).forEach((q,i)=>{document.querySelector(`#tk-q${i}`).value=q;});};
   project.addEventListener('change',fillQuestions); kind.addEventListener('change',fillQuestions);
   form.addEventListener('submit',async e=>{e.preventDefault();const error=document.querySelector('#tk-error');error.textContent='';
-    try{const r=await api('/api/admin/tickets',{method:'POST',body:JSON.stringify({project_id:project.value,kind:kind.value,title:document.querySelector('#tk-title').value,hours:document.querySelector('#tk-hours').value,questions:[0,1,2].map(i=>document.querySelector(`#tk-q${i}`).value)})});
-      document.querySelector('#tk-title').value='';await loadTickets();const created=ticketCache.find(t=>t.code===r.code);if(created)showQr(created);}
+    try{const r=await api('/api/admin/tickets',{method:'POST',body:JSON.stringify({project_id:project.value,kind:kind.value,title:document.querySelector('#tk-title').value,hours:document.querySelector('#tk-hours').value,questions:[0,1,2].map(i=>document.querySelector(`#tk-q${i}`).value),questions_text:document.querySelector('#tk-paste').value})});
+      document.querySelector('#tk-title').value='';document.querySelector('#tk-paste').value='';await loadTickets();const created=ticketCache.find(t=>t.code===r.code);if(created)showQr(created);}
     catch(ex){error.textContent=ex.message;}});
   const list=document.querySelector('#ticket-list');
   list.addEventListener('click',async e=>{const qrButton=e.target.closest('[data-qr]'), answersButton=e.target.closest('[data-answers]');
