@@ -1701,11 +1701,13 @@ class App(BaseHTTPRequestHandler):
         if path == "/api/admin/staff":
             user = self.require_user()
             if not user: return
-            if user["role"] != "admin": return self.json({"error": "Solo la administración global gestiona el equipo docente."}, 403)
+            # Each subject's teachers manage their own co-teachers; only global admins see every subject and the admin list.
+            managed = self.managed_projects(user)
+            if not managed: return self.json({"error": "No tienes permiso para gestionar el equipo docente."}, 403)
             with connect() as db:
-                assigned = [dict(r) for r in db.execute("SELECT email,project_id,created_at FROM staff_roles ORDER BY project_id,email")]
-            configured = [{"email": e, "project_id": p} for p, emails in PROJECT_ADMIN_EMAILS.items() for e in sorted(emails)]
-            return self.json({"assigned": assigned, "configured": configured, "admins": sorted(ADMIN_EMAILS)})
+                assigned = [dict(r) for r in db.execute("SELECT email,project_id,created_at FROM staff_roles ORDER BY project_id,email") if r["project_id"] in managed]
+            configured = [{"email": e, "project_id": p} for p, emails in PROJECT_ADMIN_EMAILS.items() if p in managed for e in sorted(emails)]
+            return self.json({"assigned": assigned, "configured": configured, "admins": sorted(ADMIN_EMAILS) if user["role"] == "admin" else []})
         if path == "/api/admin/surveys":
             user = self.require_user()
             if not user: return
@@ -2391,11 +2393,14 @@ class App(BaseHTTPRequestHandler):
         if path == "/api/admin/staff":
             user = self.require_user()
             if not user: return
-            if user["role"] != "admin": return self.json({"error": "Solo la administración global gestiona el equipo docente."}, 403)
             email, project = institutional_email(payload.get("email")), str(payload.get("project_id", ""))
             if not email or project not in PROJECTS: return self.json({"error": "Indica un correo PUCV y la asignatura."}, 400)
+            if project not in self.managed_projects(user): return self.json({"error": "Solo gestionas el equipo docente de tus asignaturas."}, 403)
             with connect() as db:
                 if payload.get("action") == "remove":
+                    teachers = PROJECT_ADMIN_EMAILS[project] | {r["email"] for r in db.execute("SELECT email FROM staff_roles WHERE project_id=?", (project,))}
+                    if email == user["email"].lower() and email in teachers and not teachers - {email}:
+                        return self.json({"error": "Eres la última docente de la asignatura: agrega a otra persona antes de retirarte."}, 409)
                     changed = db.execute("DELETE FROM staff_roles WHERE email=? AND project_id=?", (email, project))
                     if changed.rowcount:
                         record_audit_event(db, "staff_removed", user["email"], email, project, "staff_role",

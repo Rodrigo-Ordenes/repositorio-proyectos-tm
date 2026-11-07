@@ -12,6 +12,8 @@ Todo se hace desde **Revisión** (arriba a la derecha) → panel docente. Arriba
 4. **Casos (Innova):** revisa los 5 casos clínicos antes de abrir el curso. En el catálogo están rotulados como casos ficticios con datos simulados. Comprueba coherencia con los archivos fuente; para corregir uno, edítalo en «Materiales del repositorio»; los cambios no se pierden al reiniciar.
 5. **Preguntas guía y de control:** en cada material puedes cambiar la pregunta guía del foro y agregar hasta 3 preguntas de control. Escribe la pregunta en la primera línea y una opción por línea; la correcta lleva `*`. Separa las preguntas con una línea en blanco.
 
+- **Codocentes:** en «Equipo docente» agrega o retira a otras docentes de tus asignaturas. El cambio rige de inmediato. No puedes retirarte si eres la última docente de la asignatura.
+
 ## En cada sesión
 
 - **Tiquete de salida:** en «Tiquetes de salida», escribe el nombre de la sesión y pulsa «Crear tiquete y mostrar QR». El curso responde las 3 preguntas estándar en unos 5 minutos. La respuesta no lleva el nombre; la participación se registra aparte para limitar duplicados.
