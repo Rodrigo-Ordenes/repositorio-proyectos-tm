@@ -805,27 +805,48 @@ async function reportPage(projectId) {
 }
 async function projectionPage(projectId) {
   const params=new URLSearchParams(location.search), cohort=params.get('cohorte')||'';
-  let items=[], index=0, section=params.get('paralelo')||'', remaining=300, timer=null;
-  const sections=projectConfig[projectId]?.sections||[];
+  const SLOT=300; let items=[], index=0, section=params.get('paralelo')||'', deadline=0, left=SLOT, timer=null;
+  const sections=projectConfig[projectId]?.sections||[], canFull=!!document.documentElement.requestFullscreen;
   const load=async()=>{items=await api(`/api/admin/projection?project=${projectId}&cohort=${encodeURIComponent(cohort)}&section=${encodeURIComponent(section)}`);index=0;draw();};
-  const tick=()=>{remaining=Math.max(0,remaining-1);const t=document.querySelector('#proj-timer');if(t){t.textContent=`${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`;t.classList.toggle('timer-ending',remaining<=30);}if(!remaining){clearInterval(timer);timer=null;}};
-  const draw=()=>{clearInterval(timer);timer=null;remaining=300;const it=items[index];
+  // The countdown follows the clock, not the number of ticks: browsers slow timers in background tabs.
+  const remaining=()=>timer?Math.max(0,Math.ceil((deadline-Date.now())/1000)):left;
+  const paint=()=>{const r=remaining(), t=document.querySelector('#proj-timer'), b=document.querySelector('#proj-start');
+    if(t){t.textContent=r?`${Math.floor(r/60)}:${String(r%60).padStart(2,'0')}`:'¡Tiempo!';t.classList.toggle('timer-ending',r<=30);}
+    if(b) b.textContent=timer?'Pausar':(left<SLOT&&left>0?'Reanudar':'Iniciar 5 min');
+    if(timer&&!r){clearInterval(timer);timer=null;left=0;paint();}};
+  const toggle=()=>{if(timer){left=remaining();clearInterval(timer);timer=null;}else{if(left<=0)left=SLOT;deadline=Date.now()+left*1000;timer=setInterval(paint,250);}paint();};
+  const reset=()=>{clearInterval(timer);timer=null;left=SLOT;paint();};
+  const fullscreen=()=>document.fullscreenElement?document.exitFullscreen?.():document.documentElement.requestFullscreen?.();
+  const move=(step,focusId)=>{const next=index+step;if(next<0||next>=items.length)return;index=next;draw(focusId);};
+  const draw=(focusId)=>{reset();const it=items[index];
     main.innerHTML=`<div class="projection project-page ${projectId==='innova'?'innova-theme':''}"><div class="projection-bar no-print"><a class="back-link" href="/admin" data-route="/admin">← Panel</a>
       ${sections.length?`<label><span class="visually-hidden">Paralelo</span><select id="proj-section" class="select"><option value="">Todos los paralelos</option>${sections.map(x=>`<option${x===section?' selected':''}>${esc(x)}</option>`).join('')}</select></label>`:''}
-      <span class="helper">${items.length?`${index+1} de ${items.length}`:'Sin trabajos publicados'}</span><button class="button secondary small" type="button" id="proj-full">Pantalla completa</button></div>
-      ${it?`<div class="projection-main"><div><div class="eyebrow">${esc(it.team_name)}${it.section?' · '+esc(it.section):''}</div><h1>${esc(it.title)}</h1>
-        ${it.embed_url?`<div class="video-frame"><iframe src="${esc(it.embed_url)}" title="Video: ${esc(it.title)}" allow="encrypted-media; picture-in-picture; fullscreen"></iframe></div>`:`<p><a class="button" href="${esc(it.media_url)}" target="_blank" rel="noopener noreferrer">Abrir el video ↗</a></p>`}</div>
+      <span class="helper" role="status">${items.length?`${index+1} de ${items.length}`:'Sin trabajos publicados'}</span>${canFull?`<button class="button secondary small" type="button" id="proj-full">${document.fullscreenElement?'Salir de pantalla completa':'Pantalla completa'}</button>`:''}
+      <span class="helper projection-keys">Teclado: ← → cambiar trabajo · Espacio iniciar o pausar${canFull?' · F pantalla completa':''}. Si hiciste clic en el video, haz clic fuera de él para volver a usar el teclado.</span></div>
+      ${it?`<div class="projection-main"><div><div class="eyebrow">${esc(it.team_name)}${it.section?' · '+esc(it.section):''}</div><h1 id="proj-title" tabindex="-1">${esc(it.title)}</h1>
+        ${it.embed_url?`<div class="video-frame"><iframe src="${esc(it.embed_url)}" title="Video: ${esc(it.title)}" allow="encrypted-media; picture-in-picture; fullscreen"></iframe></div>
+          <p class="helper">¿No se ve el video? <a href="${esc(it.media_url)}" target="_blank" rel="noopener noreferrer">Ábrelo en una pestaña nueva ↗</a>. El QR y el temporizador siguen funcionando.</p>`
+          :`<p><a class="button" href="${esc(it.media_url)}" target="_blank" rel="noopener noreferrer">Abrir el video en una pestaña nueva ↗</a></p><p class="helper">Este enlace no se puede mostrar dentro de la página.</p>`}</div>
         <aside class="projection-side"><div class="timer" id="proj-timer" aria-live="off">5:00</div><div class="moderation-actions"><button class="button small" type="button" id="proj-start">Iniciar 5 min</button><button class="button secondary small" type="button" id="proj-reset">Reiniciar</button></div>
           <img src="/api/admin/qr.svg?path=${encodeURIComponent(it.path)}" alt="Código QR para coevaluar este trabajo"><p class="helper">Escanea para coevaluar este trabajo</p>
           <div class="moderation-actions"><button class="button secondary small" type="button" id="proj-prev"${index===0?' disabled':''}>← Anterior</button><button class="button small" type="button" id="proj-next"${index>=items.length-1?' disabled':''}>Siguiente →</button></div></aside></div>`
         :'<div class="empty-state">No hay trabajos publicados en esta cohorte o paralelo.</div>'}</div>`;
+    paint();
     document.querySelector('#proj-section')?.addEventListener('change',e=>{section=e.target.value;load();});
-    document.querySelector('#proj-full')?.addEventListener('click',()=>document.documentElement.requestFullscreen?.());
-    document.querySelector('#proj-start')?.addEventListener('click',()=>{if(!timer)timer=setInterval(tick,1000);});
-    document.querySelector('#proj-reset')?.addEventListener('click',()=>{clearInterval(timer);timer=null;remaining=301;tick();});
-    document.querySelector('#proj-prev')?.addEventListener('click',()=>{index--;draw();});
-    document.querySelector('#proj-next')?.addEventListener('click',()=>{index++;draw();});};
-  document.onkeydown=e=>{if(!location.pathname.startsWith('/proyeccion/'))return;if(e.target.closest('input,select,textarea'))return;if(e.key==='ArrowRight'&&index<items.length-1){index++;draw();}if(e.key==='ArrowLeft'&&index>0){index--;draw();}};
+    document.querySelector('#proj-full')?.addEventListener('click',fullscreen);
+    document.querySelector('#proj-start')?.addEventListener('click',toggle);
+    document.querySelector('#proj-reset')?.addEventListener('click',reset);
+    document.querySelector('#proj-prev')?.addEventListener('click',()=>move(-1,'proj-prev'));
+    document.querySelector('#proj-next')?.addEventListener('click',()=>move(1,'proj-next'));
+    // Keep keyboard users where they were; at either end the disabled button gives way to the other one.
+    if(focusId){const target=document.getElementById(focusId);(target&&!target.disabled?target:document.querySelector('#proj-prev:not([disabled]),#proj-next:not([disabled])')||document.querySelector('#proj-title'))?.focus();}};
+  document.onfullscreenchange=()=>{const b=document.querySelector('#proj-full');if(b)b.textContent=document.fullscreenElement?'Salir de pantalla completa':'Pantalla completa';};
+  document.onvisibilitychange=()=>{if(location.pathname.startsWith('/proyeccion/'))paint();};
+  document.onkeydown=e=>{if(!location.pathname.startsWith('/proyeccion/')||e.altKey||e.ctrlKey||e.metaKey)return;
+    const el=e.target instanceof Element?e.target:null;if(el?.closest('input,select,textarea'))return;
+    if(e.key==='ArrowRight')move(1,'proj-title');else if(e.key==='ArrowLeft')move(-1,'proj-title');
+    else if(e.key===' '&&!el?.closest('button,a')){e.preventDefault();toggle();}
+    else if((e.key==='f'||e.key==='F')&&canFull)fullscreen();};
   try{await load();}catch(e){main.innerHTML=`<div class="empty-state"><h1>Modo proyección no disponible</h1><p>${esc(e.message)}</p></div>`;}
 }
 function surveysPanel() {
