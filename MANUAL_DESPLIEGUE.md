@@ -46,6 +46,53 @@ Las demás (`SMTP_*`, `GOOGLE_*`, `PUCV_OPEN_PROJECTS`, `PUCV_INNOVA_SECTIONS`) 
 
 Cada `git push` a `main` vuelve a desplegar el sitio. La base de datos y los archivos subidos quedan en el disco y no se pierden.
 
+## 2b. Publicar en V2 Networks (cPanel con «Python»), en lugar de Render
+
+Hosting confirmado: plan «Emprendedores – Crecimiento» de V2 Networks, con cPanel, LiteSpeed y la herramienta **Python** (aplicaciones web con Passenger). El dominio es **innovacióntm.cl**, que internamente se escribe `xn--innovacintm-xeb.cl`. No uses «Sitejet Builder»: puede sobrescribir los archivos del sitio.
+
+1. **Apuntar el dominio (NIC Chile).** En nic.cl → tu dominio → «Servidores DNS», pon los servidores de V2 Networks (vienen en el correo de bienvenida; si no, pídelos con «Abrir Ticket» en el panel de V2). El cambio tarda de minutos a unas horas. Compruébalo con `dig +short NS xn--innovacintm-xeb.cl`.
+2. **Carpeta de datos (fuera de la web).** En el Administrador de archivos crea `/home/<usuario>/repositorio-datos/` y, dentro, el archivo `config.env` con permisos **600**:
+   ```text
+   APP_BASE_URL=https://xn--innovacintm-xeb.cl
+   APP_DB_PATH=/home/<usuario>/repositorio-datos/repository.sqlite3
+   APP_UPLOAD_DIR=/home/<usuario>/repositorio-datos/submissions_files
+   APP_BACKUP_DIR=/home/<usuario>/repositorio-datos/backups
+   APP_BACKUP_HOURS=24
+   APP_DEMO_AUTH=0
+   TRUST_PROXY=0
+   PUCV_ADMIN_EMAILS=rodrigo.ordenes.a@mail.pucv.cl,alejandra.sandoval@pucv.cl
+   PUCV_INCENTIVA_SECTIONS=Bioanálisis,Oftalmología
+   PUCV_SOS=<la línea de data/MI_CODIGO_SOS.txt>
+   SMTP_HOST=<servidor de «Connect Devices» de la cuenta avisos@>
+   SMTP_PORT=465
+   SMTP_SECURITY=ssl
+   SMTP_USER=avisos@xn--innovacintm-xeb.cl
+   SMTP_PASSWORD=<contraseña de la cuenta avisos@>
+   SMTP_FROM=Repositorio TM <avisos@xn--innovacintm-xeb.cl>
+   ```
+   La aplicación y el cron leen este mismo archivo (`APP_ENV_FILE` permite otra ruta). Lo que se defina en el entorno tiene prioridad. **Este archivo nunca va a GitHub.** `TRUST_PROXY=0` porque con Passenger la IP real llega directo; con `1`, un cliente podría falsear su IP y saltarse los límites de intentos.
+3. **Subir el código.** En cPanel → «Git™ Version Control» → «Create» → «Clone a Repository»: URL `https://github.com/Rodrigo-Ordenes/repositorio-proyectos-tm.git`, ruta `/home/<usuario>/repositorio-tm`. Si no está esa herramienta, descarga el ZIP del repositorio y súbelo con el Administrador de archivos a esa carpeta. Para actualizar después: «Update from Remote» y luego «Restart» en la aplicación Python.
+4. **Crear la aplicación.** cPanel → **Python** → «Crear aplicación»:
+   - versión de Python: 3.12, o la más alta disponible (mínimo 3.10);
+   - raíz de la aplicación: `repositorio-tm`;
+   - URL de la aplicación: el dominio, con la ruta vacía (`/`);
+   - archivo de inicio: `passenger_wsgi.py`;
+   - punto de entrada: `application`.
+
+   No hace falta instalar paquetes (no hay `requirements.txt`). Guarda y pulsa «Restart».
+5. **HTTPS.** Cuando el DNS ya apunte: cPanel → «SSL/TLS Status» → «Run AutoSSL». Después, en «Dominios», activa «Force HTTPS Redirect».
+6. **Cron (respaldo diario y limpieza).** La aplicación con Passenger no corre tareas en segundo plano. En cPanel → «Trabajos Cron» agrega una tarea **cada hora** (minuto `7`, resto `*`):
+   ```text
+   cd /home/<usuario>/repositorio-tm && /home/<usuario>/virtualenv/repositorio-tm/3.12/bin/python server.py mantenimiento >> /home/<usuario>/repositorio-datos/cron.log 2>&1
+   ```
+   Copia la ruta exacta de Python desde la página de la aplicación (cPanel la muestra en el comando «Enter to the virtual environment»). `mantenimiento` depura la auditoría y crea la copia de la base cuando han pasado 24 h.
+7. **Comprobar.** Abre la página de la aplicación en cPanel, entra al entorno virtual con el comando que muestra y ejecuta `python server.py diagnostico`. Después, en el navegador:
+   - **HTTPS válido**, con el candado del navegador;
+   - **ingreso con tu código SOS**;
+   - **ingreso de la profesora** con su código personal;
+   - **subida de 8 MB**: si falla con error 413 o 500, LiteSpeed tiene un límite de cuerpo menor. Pide a soporte subir el «Max Request Body Size» a 32 MB;
+   - **modo proyección**.
+
 ## 3. Primer ingreso y cuenta de la docente (5 minutos)
 
 1. Abre la dirección del sitio → **Tengo un código de ingreso** → tu correo y el código SOS. Entras como administración global.

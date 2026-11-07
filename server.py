@@ -34,6 +34,22 @@ from pathlib import Path
 import qr
 
 ROOT = Path(__file__).resolve().parent
+
+
+def load_env_file(path: Path):
+    """KEY=value lines shared by the hosting app and its cron jobs, kept outside the repository; the real environment wins."""
+    if not path.is_file(): return
+    if path.stat().st_mode & 0o077:
+        print(f"Aviso: {path} debe tener permisos 600 (contiene secretos).", file=sys.stderr, flush=True)
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, sep, value = line.strip().partition("=")
+        if not sep or key.startswith("#") or not re.fullmatch(r"[A-Z][A-Z0-9_]*", key.strip()): continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"": value = value[1:-1]
+        os.environ.setdefault(key.strip(), value)
+
+
+load_env_file(Path(os.environ.get("APP_ENV_FILE", ROOT.parent / "repositorio-datos" / "config.env")))
 DATA_DIR = ROOT / "data"
 DB_PATH = Path(os.environ.get("APP_DB_PATH", DATA_DIR / "repository.sqlite3"))
 UPLOAD_DIR = Path(os.environ.get("APP_UPLOAD_DIR", DATA_DIR / "submissions_files"))
@@ -2813,6 +2829,18 @@ def cli_backup(args):
     print(f"Respaldo completo creado: {create_full_archive(target)}")
 
 
+def cli_maintenance(args):
+    """`python3 server.py mantenimiento`: hourly cron job where no background threads run (cPanel/Passenger)."""
+    init_db()
+    with connect() as db: purge_audit_events(db)
+    print("Auditoría depurada.")
+    latest = max((p.stat().st_mtime for p in BACKUP_DIR.glob("respaldo-*.sqlite3")), default=0) if BACKUP_DIR.is_dir() else 0
+    if BACKUP_HOURS > 0 and time.time() - latest >= BACKUP_HOURS * 3600:
+        print(f"Respaldo de la base: {create_backup()}")
+    else:
+        print("Respaldo al día.")
+
+
 def cli_verify_backup(args):
     """`python3 server.py verificar-respaldo archivo.zip|.sqlite3`: restore into a temporary copy and check it opens and is complete."""
     if not args or not Path(args[0]).is_file():
@@ -2911,7 +2939,7 @@ def cli_diagnose(args):
 
 
 if __name__ == "__main__":
-    commands = {"diagnostico": cli_diagnose, "borradores-desafios": cli_challenge_drafts, "codigo": cli_issue_code, "codigo-sos": cli_issue_sos, "respaldo": cli_backup, "verificar-respaldo": cli_verify_backup,
+    commands = {"diagnostico": cli_diagnose, "borradores-desafios": cli_challenge_drafts, "codigo": cli_issue_code, "codigo-sos": cli_issue_sos, "respaldo": cli_backup, "mantenimiento": cli_maintenance, "verificar-respaldo": cli_verify_backup,
                 "actualizar-casos": cli_update_cases}
     if len(sys.argv) > 1 and sys.argv[1] in commands:
         commands[sys.argv[1]](sys.argv[2:])
