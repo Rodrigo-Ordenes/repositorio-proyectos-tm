@@ -72,3 +72,30 @@ Las tareas 1 a 5 están implementadas en el prototipo. El envío de enlaces qued
 ## Evaluación de usabilidad pendiente
 
 La primera versión implementa decisiones basadas en normas y patrones de diseño; aún no se ha observado con estudiantes o docentes. Una ronda de validación debería pedir a participantes de ambos proyectos que: (a) encuentren un caso o desafío, (b) distingan el tipo de entrega, (c) regresen a la portada, (d) envíen una entrega de prueba y (e) comenten una cápsula. Registrar tasa de éxito, tiempo por tarea, errores de proyecto y solicitudes de ayuda. Repetir con pantalla de teléfono y navegación por teclado.
+
+## Recorrido de usabilidad (7 de noviembre de 2026)
+
+**Método.** Recorrido cognitivo de las tareas a–e en un teléfono de 375 px, como estudiante nueva que llega con la invitación de su paralelo y entra con el código del curso. Después, los flujos de la docente: crear un código con lista, revisar, publicar, abrir el informe y la proyección. Además, auditoría automática de contraste (WCAG 2.2 AA), nombres accesibles y desborde horizontal, en tema claro y oscuro. No reemplaza la prueba con 5 estudiantes reales (pendiente #25): la hizo un agente siguiendo el protocolo.
+
+### Corregidos (los cinco de mayor impacto)
+
+| # | Problema | Tarea | Impacto | Corrección |
+|---|---|---|---|---|
+| 1 | El QR de la proyección abría el trabajo desde arriba: en el teléfono la coevaluación quedaba a casi tres pantallas. Si la estudiante no tenía sesión, después de entrar llegaba a la portada | e, sesión del 18-nov | Toda la clase, en vivo | El QR apunta a `#coevaluacion` y la ficha se desplaza ahí cuando termina de cargar. Las fichas guardan el destino durante el ingreso. Hay atajos «Comentar ↓ / Coevaluar ↓» bajo el título |
+| 2 | Con la invitación, el campo de correo quedaba bajo el borde de la pantalla, detrás de la presentación | ingreso | Primer contacto de cada estudiante | Con `?unirse=` el correo recibe el foco y queda a la vista |
+| 3 | Después de entrar con el código, la estudiante quedaba a mitad de la portada y no en su asignatura | ingreso, c | Desorientación inicial | Tras unirse va directo a la asignatura; tras entrar con código, la página parte arriba |
+| 4 | El formulario de entrega (47 campos, 3.360 px en el teléfono) se perdía si se recargaba la página o vencía la sesión | d | Pérdida de trabajo del equipo | Borrador local por persona y asignatura (solo en ese dispositivo), con aviso y «Descartar borrador». Se borra al enviar. Los archivos hay que elegirlos de nuevo |
+| 5 | Dos campos sin nombre accesible: enlace de material adicional y enunciados de la encuesta (WCAG 1.3.1 y 4.1.2) | d, docente | Lectores de pantalla | Etiqueta visible y `aria-label` |
+
+### Pendientes documentados
+
+- **«Desafíos» sin desafíos (tarea a).** Mientras la docente no publique los 6 borradores, la pestaña muestra solo trabajos de otros equipos y nada explica por qué. Se resuelve al publicarlos; si se retrasan, conviene un aviso en la pestaña.
+- **Pestañas en el teléfono.** «Tiquetes y encuestas» ocupa tres líneas a 375 px. Funciona, pero se ve apretado.
+- **Ingreso sin invitación en el teléfono.** La presentación va antes del formulario. Con invitación ya está resuelto (punto 2).
+- **Cerrar sesión es un enlace GET.** Otro sitio podría cerrar la sesión de alguien (riesgo bajo, molesto). Conviene pasarlo a POST.
+- **Borrador en computadores compartidos.** Queda guardado con el correo de la persona hasta enviarlo o descartarlo. En laboratorios, recordar «Descartar borrador».
+- **Proyección: teclado y video.** Si se hace clic dentro del video, el reproductor captura el teclado hasta hacer clic fuera (limitación del navegador; documentada en la guía docente).
+
+### Revisión a 375 px y en ambos temas (P1.7)
+
+Vistas revisadas a 375 px, en claro y oscuro: ingreso con invitación; asignatura; formulario de entrega con borrador y aviso de Drive; ficha con atajos y coevaluación; panel docente completo (códigos del curso con lista, trazabilidad de ingresos, auditoría); proyección. Resultado: **0 fallas de contraste WCAG 2.2 AA, 0 campos sin nombre accesible (después de la corrección 5) y sin desborde horizontal**. La tabla de trazabilidad se desplaza dentro de su propio contenedor. El aviso de respaldo (PR #3) se revisó solo en escritorio.
