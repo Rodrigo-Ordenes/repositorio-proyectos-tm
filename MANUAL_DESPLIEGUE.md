@@ -99,7 +99,7 @@ Con eso se activan el enlace de ingreso por correo y los avisos de acceso aproba
 
 ## 7. Mantenerlo
 
-- **Respaldo fuera del sitio, una vez por semana:** en el panel, pulsa «respaldo completo (.zip)» y guárdalo en un lugar del equipo. El sitio hace copias automáticas, pero quedan en el mismo disco.
+- **Respaldo fuera del sitio, una vez por semana:** en el panel, pulsa «respaldo completo (.zip)» y guárdalo en un lugar del equipo. El sitio hace copias automáticas, pero quedan en el mismo disco. El panel muestra quién descargó el último respaldo y cuándo; si pasan 7 días sin descarga, aparece un aviso arriba del panel. Cada descarga queda en la auditoría.
 - **Registro de auditoría:** en el panel de administración global revisa ingresos SOS y del curso, cambios de códigos y equipo docente, retiros de acceso y anonimización. Se conserva por 180 días; las IP se guardan como huellas HMAC con una sal aleatoria persistida en la base, nunca en claro.
 - **Aviso si se cae:** crea un monitor gratuito en UptimeRobot (o similar) sobre `https://TU-SITIO/api/me`. Avisa por correo si deja de responder.
 - **Nuevo semestre:** en el panel, **Cohortes → Abrir cohorte**. No se borra nada.
