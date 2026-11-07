@@ -814,6 +814,21 @@ def survey_results(items, scale, rows):
     return results
 
 
+MIN_SHARE_N = 5
+
+
+def level_shares(distribution, min_n=MIN_SHARE_N):
+    """Whole percentages per level that add up to 100 (largest remainder, ties to the lower level).
+    With fewer than min_n answers the shares are withheld: they could reveal individual answers."""
+    n = sum(distribution)
+    if n < min_n: return {"n": n, "percent": None}
+    raw = [100 * count / n for count in distribution]
+    percent = [int(x) for x in raw]
+    for index in sorted(range(len(raw)), key=lambda i: (-(raw[i] - percent[i]), i))[:100 - sum(percent)]:
+        percent[index] += 1
+    return {"n": n, "percent": percent}
+
+
 def project_indicators(db, project, cohort=None):
     """Figures the proposal promises for the Incentiva and Innova reports, computed from what the platform already records.
     Everything is limited to one cohort: by its column where the record has one, by its time window otherwise."""
@@ -889,7 +904,16 @@ def project_report(db, project, cohort):
         before = {r["text"]: r for r in survey_results(json.loads(entry_survey["items"]), json.loads(entry_survey["scale"]), rows_for(entry_survey["id"]))}
         for r in survey_results(json.loads(exit_survey["items"]), json.loads(exit_survey["scale"]), rows_for(exit_survey["id"])):
             b = before.get(r["text"])
-            kpsi.append({"text": r["text"], "dimension": r["dimension"], "before": b["mean"] if b else None, "after": r["mean"]})
+            kpsi.append({"text": r["text"], "dimension": r["dimension"], "before": b["mean"] if b else None, "after": r["mean"],
+                         "before_levels": level_shares(b["distribution"]) if b else {"n": 0, "percent": None},
+                         "after_levels": level_shares(r["distribution"])})
+    perception = None
+    survey = db.execute("SELECT * FROM surveys WHERE project_id=? AND cohort=? AND kind='percepcion' ORDER BY id DESC LIMIT 1", (project, cohort)).fetchone()
+    if survey:
+        answers = [json.loads(r[0]) for r in db.execute("SELECT answer_values FROM survey_answers WHERE survey_id=?", (survey["id"],))]
+        perception = {"title": survey["title"], "scale": json.loads(survey["scale"]),
+                      "items": [{"text": r["text"], "dimension": r["dimension"], "levels": level_shares(r["distribution"])}
+                                for r in survey_results(json.loads(survey["items"]), json.loads(survey["scale"]), answers)]}
     quiz = []
     for resource in db.execute("SELECT id,title,quiz FROM resources WHERE project_id=? AND quiz<>'[]'", (project,)).fetchall():
         attempts = [json.loads(a[0]) for a in db.execute("SELECT answers FROM quiz_attempts WHERE resource_id=? AND created_at>=? AND created_at<?", (resource["id"], since, until))]
@@ -902,7 +926,7 @@ def project_report(db, project, cohort):
     tags = db.execute("""SELECT g.tag,COUNT(*) n FROM exit_ticket_tags g JOIN exit_ticket_answers a ON a.id=g.answer_id
       JOIN exit_tickets t ON t.id=a.ticket_id WHERE t.project_id=? AND t.cohort=? GROUP BY g.tag ORDER BY n DESC LIMIT 8""", (project, cohort)).fetchall()
     return {"project": project, "name": PROJECTS[project]["name"], "cohort": cohort, "indicators": project_indicators(db, project, cohort),
-            "statuses": statuses, "by_section": by_section, "kpsi": kpsi, "quiz": quiz,
+            "statuses": statuses, "by_section": by_section, "kpsi": kpsi, "kpsi_scale": KPSI_SCALE, "perception": perception, "quiz": quiz,
             "peer": peer_summary(PEER_RUBRIC[project], peer) if peer else None, "doubts": [dict(r) for r in tags]}
 
 

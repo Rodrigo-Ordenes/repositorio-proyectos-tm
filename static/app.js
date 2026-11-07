@@ -827,6 +827,22 @@ function barChart(rows, {series, max, format=v=>String(v), label}) {
   const table=`<details class="chart-data"><summary>Ver los datos en tabla</summary><table class="code-table"><thead><tr><th>${esc(label)}</th>${series.map(s=>`<th>${esc(s.name)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.label)}</td>${r.values.map(v=>`<td>${v===null||v===undefined?'—':esc(format(v))}</td>`).join('')}</tr>`).join('')}</tbody></table></details>`;
   return `<svg class="bar-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(label)}">${legend}${bars}</svg>${table}`;
 }
+// 100 % stacked bars for an ordinal scale: one row per moment, written values in text ink, n < 5 withheld.
+function stackedChart(items, {scale, moments, label}) {
+  // The CSP forbids style attributes: colours come from classes and widths are set by sizeStackedCharts() after rendering.
+  const k=scale.length, tone=i=>`lv${k}-${i+1}`;
+  const legend=`<ul class="stack-legend" aria-label="Niveles de la escala">${scale.map((name,i)=>`<li><i class="${tone(i)}" aria-hidden="true"></i>${i+1} · ${esc(name)}</li>`).join('')}</ul>`;
+  const bar=(levels,moment)=>{
+    if(!levels||levels.percent===null) return `<div class="stack-row"><span class="stack-moment">${esc(moment)}</span><p class="helper stack-values">${levels&&levels.n?`Muestra insuficiente (n = ${levels.n}): con menos de 5 respuestas no se muestran porcentajes.`:'Sin respuestas.'}</p></div>`;
+    const parts=levels.percent.map((v,i)=>v?`<span class="stack-seg ${tone(i)}" data-share="${v}" title="${i+1} · ${esc(scale[i])}: ${v} %"></span>`:'').join('');
+    return `<div class="stack-row"><span class="stack-moment">${esc(moment)} <span class="helper">(n = ${levels.n})</span></span><div class="stack-bar" aria-hidden="true">${parts}</div>
+      <p class="helper stack-values">${levels.percent.map((v,i)=>`${i+1}: ${v} %`).join(' · ')}</p></div>`;};
+  const rows=items.map(it=>`<div class="stack-item"><p class="stack-label">${esc(it.text)}</p>${moments.map(m=>bar(it[m.key],m.name)).join('')}</div>`).join('');
+  const cell=lv=>lv&&lv.percent?lv.percent.map(v=>`<td>${v} %</td>`).join(''):`<td colspan="${k}">${lv&&lv.n?'muestra insuficiente':'—'}</td>`;
+  const table=`<details class="chart-data"><summary>Ver los datos en tabla</summary><div class="table-scroll"><table class="code-table"><thead><tr><th>${esc(label)}</th><th>Momento</th><th>n</th>${scale.map((_,i)=>`<th>Nivel ${i+1}</th>`).join('')}</tr></thead><tbody>${items.map(it=>moments.map(m=>`<tr><td>${esc(it.text)}</td><td>${esc(m.name)}</td><td>${it[m.key]?.n??0}</td>${cell(it[m.key])}</tr>`).join('')).join('')}</tbody></table></div></details>`;
+  return `<div class="stack-chart">${legend}${rows}</div>${table}`;
+}
+function sizeStackedCharts(root) { root.querySelectorAll('.stack-seg[data-share]').forEach(seg=>{seg.style.width=`${Number(seg.dataset.share)}%`;}); }
 async function reportPage(projectId) {
   const params=new URLSearchParams(location.search), cohort=params.get('cohorte')||'';
   main.innerHTML='<div class="resource-detail"><div class="loading">Preparando el informe…</div></div>';
@@ -841,12 +857,17 @@ async function reportPage(projectId) {
     <p class="no-print"><button class="button small" type="button" id="print-report">Imprimir o guardar como PDF</button> <span class="helper">Generado el ${new Date().toLocaleDateString('es-CL')} con los datos del repositorio.</span></p>
     <section class="detail-panel"><h2>Entregas</h2><div class="stat-row">${status.map(([k,l])=>`<div class="stat"><span class="stat-value">${r.statuses[k]||0}</span><span class="stat-label">${l}</span></div>`).join('')}</div>
       ${r.by_section.length?barChart(r.by_section.map(x=>({label:x.section,values:[x.teams]})),{series:[{name:'Equipos con entrega',color:'--series-1'}],max:Math.max(...r.by_section.map(x=>x.teams),1),label:'Equipos con entrega por paralelo'}):''}</section>
-    ${r.kpsi.length?`<section class="detail-panel"><h2>KPSI: entrada y salida</h2><p class="helper">Promedio de autoevaluación por enunciado (1 a 4). Es percepción de dominio, no una medida de aprendizaje ni de eficacia.</p>${barChart(r.kpsi.map(x=>({label:x.text,values:[x.before,x.after]})),{series:[{name:'Entrada',color:'--series-1'},{name:'Salida',color:'--series-2'}],max:4,format:v=>v.toFixed(1),label:'Enunciado del KPSI'})}</section>`:''}
+    ${r.kpsi.length?`<section class="detail-panel"><h2>KPSI: entrada y salida</h2><p class="helper">Promedio de autoevaluación por enunciado (1 a 4). Es percepción de dominio, no una medida de aprendizaje ni de eficacia.</p>${barChart(r.kpsi.map(x=>({label:x.text,values:[x.before,x.after]})),{series:[{name:'Entrada',color:'--series-1'},{name:'Salida',color:'--series-2'}],max:4,format:v=>v.toFixed(1),label:'Enunciado del KPSI'})}
+      <h3>Distribución por nivel (%)</h3><p class="helper">Porcentaje de respuestas en cada nivel, al inicio y al cierre. Cada barra suma 100 %. Con menos de 5 respuestas no se muestran porcentajes, para no revelar respuestas individuales.</p>
+      ${stackedChart(r.kpsi,{scale:r.kpsi_scale,moments:[{key:'before_levels',name:'Entrada'},{key:'after_levels',name:'Salida'}],label:'Enunciado del KPSI'})}</section>`:''}
+    ${r.perception?`<section class="detail-panel"><h2>Percepción: ${esc(r.perception.title)}</h2><p class="helper">Porcentaje de respuestas en cada nivel de acuerdo (1 a 5). Con menos de 5 respuestas no se muestran porcentajes.</p>
+      ${stackedChart(r.perception.items.map(x=>({text:x.text,levels:x.levels})),{scale:r.perception.scale,moments:[{key:'levels',name:'Cierre'}],label:'Enunciado'})}</section>`:''}
     ${r.quiz.length?`<section class="detail-panel"><h2>Preguntas de control</h2>${barChart(r.quiz.map(x=>({label:`${x.title} (${x.respondents})`,values:[x.correct_share]})),{series:[{name:'Respuestas correctas',color:'--series-1'}],max:1,format:pct,label:'Ficha (personas que respondieron)'})}</section>`:''}
     ${r.peer?`<section class="detail-panel"><h2>Coevaluación entre pares</h2><p class="helper">${r.peer.count} evaluaciones · promedio general ${r.peer.overall} de 4.</p>${barChart(r.peer.averages.map(a=>({label:a.label,values:[a.average]})),{series:[{name:'Promedio',color:'--series-1'}],max:4,format:v=>v.toFixed(2),label:'Criterio'})}</section>`:''}
     ${r.doubts.length?`<section class="detail-panel"><h2>Dudas más frecuentes</h2><p class="helper">Categorías asignadas por la docente a las respuestas de tiquetes y preguntas previas.</p>${barChart(r.doubts.map(d=>({label:d.tag,values:[d.n]})),{series:[{name:'Respuestas',color:'--series-1'}],max:Math.max(...r.doubts.map(d=>d.n)),label:'Categoría'})}</section>`:''}
     <section class="detail-panel"><h2>Indicadores</h2><table class="code-table"><tbody>${r.indicators.map(x=>{const head=x.group!==group?`<tr><th colspan="2">${esc(x.group)}</th></tr>`:'';group=x.group;return `${head}<tr><td>${esc(x.label)}</td><td><b>${esc(x.value)}</b></td></tr>`;}).join('')}</tbody></table></section>
   </article>`;
+  sizeStackedCharts(main);
   document.querySelector('#print-report').addEventListener('click',()=>window.print());
 }
 async function projectionPage(projectId) {

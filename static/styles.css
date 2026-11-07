@@ -457,3 +457,31 @@ h2 { font-size: clamp(1.35rem, 2.5vw, 2rem); line-height: 1.16; }
 #foro:focus, #coevaluacion:focus { outline: none; }
 .review-badge { display: inline-block; min-width: 1.4em; margin-left: .25rem; padding: 0 .4em; border-radius: 999px; background: var(--danger); color: var(--paper); font-size: .8em; font-weight: 700; line-height: 1.4; text-align: center; }
 .notice-settings { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.25rem; }
+/* Ordinal ramps (one blue hue), validated with the dataviz palette validator --ordinal on #fffef9 and #1d241f, Nov 2026. */
+:root { --level4-1: #86b6ef; --level4-2: #5598e7; --level4-3: #256abf; --level4-4: #104281;
+  --level5-1: #86b6ef; --level5-2: #5598e7; --level5-3: #2a78d6; --level5-4: #1c5cab; --level5-5: #0d366b; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --level4-1: #1c5cab; --level4-2: #3987e5; --level4-3: #6da7ec; --level4-4: #b7d3f6;
+  --level5-1: #1c5cab; --level5-2: #2a78d6; --level5-3: #5598e7; --level5-4: #86b6ef; --level5-5: #cde2fb; } }
+:root[data-theme="dark"] { --level4-1: #1c5cab; --level4-2: #3987e5; --level4-3: #6da7ec; --level4-4: #b7d3f6;
+  --level5-1: #1c5cab; --level5-2: #2a78d6; --level5-3: #5598e7; --level5-4: #86b6ef; --level5-5: #cde2fb; }
+.stack-legend { display: flex; flex-wrap: wrap; gap: .3rem 1rem; padding: 0; margin: .6rem 0 1rem; list-style: none; font-size: .9rem; }
+.stack-legend i { display: inline-block; width: 12px; height: 12px; margin-right: .35rem; border-radius: 3px; vertical-align: -1px; }
+.stack-item { padding: .6rem 0; border-top: 1px solid var(--line); }
+.stack-label { margin: 0 0 .4rem; font-weight: 600; }
+.stack-row { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: .2rem .8rem; align-items: center; margin-bottom: .35rem; }
+.stack-bar { display: flex; gap: 2px; height: 18px; }
+.stack-seg { display: block; height: 100%; min-width: 2px; }
+.stack-seg:first-child { border-radius: 4px 0 0 4px; }
+.stack-seg:last-child { border-radius: 0 4px 4px 0; }
+.stack-values { grid-column: 2; margin: 0; }
+@media (max-width: 560px) { .stack-row { grid-template-columns: 1fr; } .stack-values { grid-column: 1; } }
+@media print { .stack-seg { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+.lv4-1 { background: var(--level4-1); }
+.lv4-2 { background: var(--level4-2); }
+.lv4-3 { background: var(--level4-3); }
+.lv4-4 { background: var(--level4-4); }
+.lv5-1 { background: var(--level5-1); }
+.lv5-2 { background: var(--level5-2); }
+.lv5-3 { background: var(--level5-3); }
+.lv5-4 { background: var(--level5-4); }
+.lv5-5 { background: var(--level5-5); }
