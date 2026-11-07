@@ -44,6 +44,21 @@ def wait_mail(n, timeout=5):
     while len(received) < n and time.time() < end: time.sleep(0.05)
     return len(received)
 
+def settle(quiet=0.5, timeout=5):
+    """Wait until no e-mail has arrived for `quiet` seconds: notices are sent from background threads."""
+    end, last, seen = time.time() + timeout, time.time(), len(received)
+    while time.time() < end:
+        time.sleep(0.05)
+        if len(received) != seen: seen, last = len(received), time.time()
+        elif time.time() - last >= quiet: return
+
+def wait_for(predicate, timeout=5):
+    end = time.time() + timeout
+    while time.time() < end:
+        if predicate(): return True
+        time.sleep(0.05)
+    return predicate()
+
 def line(ok, label, detail=""): print(("OK   " if ok else "FAIL ") + label + ("" if ok else " -> " + str(detail)[:250]))
 
 prof, est, otro = login("prof@mail.pucv.cl"), login("ana@mail.pucv.cl"), login("beto@mail.pucv.cl")
@@ -62,17 +77,19 @@ mail = received[0]["data"] if received else ""
 line("1 pendiente" in mail and "https://repo.example.test/admin" in mail, "el correo trae el conteo y el enlace al panel", mail[-400:])
 line("ana@mail.pucv.cl" not in mail and "Ana" not in mail, "el correo no incluye datos de la estudiante", mail[-400:])
 # A second event within the hour does not send another e-mail to the same teacher
-before = len(received)
+settle(); before = len(received)
 call("POST", "/api/access-requests", {"project_id": "incentiva"}, otro)
 time.sleep(0.6)
 line(len([m for m in received[before:] if "prof@mail.pucv.cl" in m["to"]]) == 0, "como máximo un correo por hora por docente")
 # The hourly cron sends the digest once the hour has passed, with the updated total
+settle()
 with server.connect() as db: db.execute("UPDATE settings SET value=CAST(value AS INTEGER)-3700 WHERE key LIKE 'notify_last:%'")
 before = len(received)
-server.notify_pending_digest(); wait_mail(before + 1)
+server.notify_pending_digest()
+wait_for(lambda: any("prof@mail.pucv.cl" in m["to"] for m in received[before:]))
 digest = [m for m in received[before:] if "prof@mail.pucv.cl" in m["to"]]
 line(digest and "2 pendientes" in digest[0]["data"], "el cron envía el resumen con el total actualizado", digest)
-before = len(received); server.notify_pending_digest(); time.sleep(0.4)
+settle(); before = len(received); server.notify_pending_digest(); settle()
 line(len(received) == before, "el cron no repite el aviso sin novedades")
 # Opt-out
 st, _, _ = call("POST", "/api/admin/notifications", {"enabled": False}, prof)
