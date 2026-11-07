@@ -6,7 +6,7 @@ export PRUEBAS_TMP="$(mktemp -d)"
 trap 'rm -rf "$PRUEBAS_TMP"' EXIT
 if lsof -ti:8766 >/dev/null 2>&1; then echo "El puerto 8766 está ocupado: cierra lo que lo usa y vuelve a intentar."; exit 2; fi
 suites=("$@")
-[ ${#suites[@]} -eq 0 ] && suites=(acceso entregas_y_materiales foro_tiquetes_vitrina encuestas_indicadores_datos seguridad paginas_publicas mejoras trazabilidad_ingresos auditoria_global usabilidad)
+[ ${#suites[@]} -eq 0 ] && suites=(acceso entregas_y_materiales foro_tiquetes_vitrina encuestas_indicadores_datos seguridad paginas_publicas mejoras trazabilidad_ingresos auditoria_global respaldo_recordatorio drive_compartido proyeccion usabilidad)
 total_ok=0; total_fail=0
 for suite in "${suites[@]}"; do
   out=$(bash "./$suite.sh" 2>&1)

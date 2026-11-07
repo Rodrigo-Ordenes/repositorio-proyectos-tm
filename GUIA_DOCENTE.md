@@ -30,7 +30,8 @@ Todo se hace desde **Revisión** (arriba a la derecha) → panel docente. Arriba
 - **Preguntas previas (aula invertida):** en «Tiquetes de salida y preguntas previas», elige el tipo «Preguntas previas» y comparte el QR o el enlace antes de la clase.
 - **Agrupar dudas:** en «Ver respuestas» escribe una categoría junto a cada respuesta (se autocompletan las que ya usaste). Arriba aparecen la duda dominante y las palabras más frecuentes; empieza la clase por ahí.
 - **Seguimiento por equipo:** muestra por paralelo cuántas personas están ligadas a una entrega y qué equipos faltan. Quien aparezca «sin entrega asociada» puede integrar un equipo que no escribió su correo.
-- **Sesión de proyección (18 de noviembre):** en «Informe final y modo proyección», pulsa «Modo proyección». Usa «Siguiente» o las flechas del teclado, el temporizador de 5 minutos y el QR para que el curso coevalúe cada trabajo en el momento.
+- **Sesión de proyección (18 de noviembre):** en «Informe final y modo proyección», pulsa «Modo proyección». Atajos: ← → cambian de trabajo, Espacio inicia o pausa los 5 minutos y F activa la pantalla completa. El temporizador sigue la hora real aunque cambies a otra pestaña o ventana. Si hiciste clic dentro del video, haz clic fuera de él para que el teclado vuelva a funcionar. Si un video no carga, usa «Ábrelo en una pestaña nueva»: el QR para coevaluar sigue en pantalla.
+- **Ensayo previo (10 minutos, el día anterior):** abre el modo proyección en el computador de la sala, filtra por paralelo, revisa que cada video cargue (anota los que no), prueba pantalla completa y el temporizador, y escanea un QR con el teléfono.
 
 ## Informes
 
@@ -48,7 +49,7 @@ Todo se hace desde **Revisión** (arriba a la derecha) → panel docente. Arriba
 - **Retirar acceso:** se hace en «Integrantes con acceso». Para devolverlo, genera un código personal para esa persona.
 - **Solicitudes de datos:** descarga en JSON todo lo que hay de una persona, o elimínalo con doble confirmación.
 - **Cierre de cohorte:** no lo ejecutes sin acordar antes qué se conservará y por cuánto tiempo. La acción guarda un respaldo completo que contiene datos y después anonimiza cuentas, pero no borra esos respaldos automáticamente.
-- **Respaldos:** descarga el respaldo completo una vez por semana y guárdalo fuera del sitio.
+- **Respaldos:** descarga el respaldo completo una vez por semana y guárdalo fuera del sitio. Si pasan 7 días sin descargarlo, el panel lo avisa arriba.
 
 ## Si algo falla
 

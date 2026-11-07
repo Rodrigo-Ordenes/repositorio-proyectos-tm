@@ -233,6 +233,7 @@ cual cuales como mas menos mucho puede pueden seria serian hacer hace tener teng
 UPLOAD_SUFFIXES = (".pdf", ".docx", ".pptx", ".xlsx", ".odt", ".txt")
 BACKUP_DIR = Path(os.environ.get("APP_BACKUP_DIR", DB_PATH.parent / "backups"))
 AUDIT_RETENTION_DAYS = 180
+BACKUP_REMINDER_DAYS = 7
 BACKUP_KEEP = max(1, int(os.environ.get("APP_BACKUP_KEEP", "14")))
 BACKUP_HOURS = int(os.environ.get("APP_BACKUP_HOURS", "24"))
 
@@ -715,13 +716,20 @@ def drive_sharing_status(url) -> str:
     request = urllib.request.Request(f"https://drive.google.com/file/d/{found.group(1)}/view", headers={"User-Agent": "Mozilla/5.0"})
     try:
         with urllib.request.build_opener(_NoRedirect).open(request, timeout=6) as response:
-            return "public" if response.status == 200 else "unknown"
+            return classify_drive_response(response.status)
     except urllib.error.HTTPError as error:
-        if error.code in (301, 302, 303, 307) and "accounts.google.com" in error.headers.get("Location", ""): return "private"
-        if error.code == 404: return "missing"
-        return "unknown"
+        return classify_drive_response(error.code, error.headers.get("Location", ""))
     except (urllib.error.URLError, TimeoutError, OSError):
         return "unknown"
+
+
+def classify_drive_response(status, location="") -> str:
+    """Anonymous Drive answers measured on 30 real links (Nov 2026): 200 viewable, 401 sign-in required, 404 gone."""
+    if status == 200: return "public"
+    if status in (401, 403): return "private"
+    if status in (301, 302, 303, 307) and urllib.parse.urlparse(location).hostname == "accounts.google.com": return "private"
+    if status == 404: return "missing"
+    return "unknown"
 
 
 def parse_quiz(text):
@@ -1450,7 +1458,13 @@ class App(BaseHTTPRequestHandler):
             if not user: return
             if user["role"] != "admin": return self.json({"error": "Solo la administración global gestiona respaldos."}, 403)
             files = sorted(BACKUP_DIR.glob("respaldo-*.sqlite3"), reverse=True) if BACKUP_DIR.is_dir() else []
+            with connect() as db:
+                row = db.execute("SELECT value FROM settings WHERE key='last_full_backup_download'").fetchone()
+            last = json.loads(row["value"]) if row else None
+            days = (int(time.time()) - int(last["at"])) // 86400 if last else None
             return self.json({"enabled": BACKUP_HOURS > 0, "every_hours": BACKUP_HOURS, "keep": BACKUP_KEEP,
+                              "last_download": last, "days_since_download": days,
+                              "download_overdue": days is None or days >= BACKUP_REMINDER_DAYS, "reminder_days": BACKUP_REMINDER_DAYS,
                               "backups": [{"name": f.name, "size": f.stat().st_size, "created_at": int(f.stat().st_mtime)} for f in files[:BACKUP_KEEP]]})
         if path == "/api/admin/audit":
             user = self.require_user()
@@ -1471,6 +1485,11 @@ class App(BaseHTTPRequestHandler):
             if not user: return
             # The archive holds both courses and every account, so course editors cannot download it.
             if user["role"] != "admin": return self.json({"error": "Solo la administración global descarga respaldos."}, 403)
+            # Only the full archive leaves the hosting; the reminder counts days since someone took one off-site.
+            with connect() as db:
+                db.execute("INSERT INTO settings(key,value) VALUES('last_full_backup_download',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                           (json.dumps({"at": int(time.time()), "by": user["email"]}),))
+                record_audit_event(db, "full_backup_downloaded", user["email"], ip_hash=audit_ip_hash(db, self.client_ip()))
             return self.send_archive()
         if path == "/api/admin/tickets":
             user = self.require_user()

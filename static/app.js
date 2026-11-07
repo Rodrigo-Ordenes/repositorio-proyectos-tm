@@ -561,7 +561,7 @@ async function moderatorPage() {
     <section class="detail-panel resource-detail"><div class="section-head"><h2>Coevaluación entre pares</h2><a class="button secondary small" href="/api/admin/peer-reviews.csv" download>Descargar todo (CSV) ↧</a></div><p class="helper">Promedios por ficha (1 a 4) con la rúbrica de cada asignatura. El CSV incluye quién evaluó, para revisar la calidad de los comentarios.</p><div id="peer-summary" class="helper">Cargando…</div></section>
     <section class="detail-panel resource-detail"><div class="section-head"><h2>Integrantes con acceso</h2><span class="pill" id="members-count"></span></div><div id="members-list" class="helper">Cargando…</div></section>
     ${user.role==='admin'?staffPanel()+auditPanel()+privacyPanel():''}
-    ${user.role==='admin'?`<section class="detail-panel resource-detail"><h2>Respaldos</h2><div id="backup-info" class="helper">Cargando…</div><a class="button secondary small" href="/api/admin/backup" download>Descargar respaldo completo (.zip) ↧</a><p class="helper">Incluye la base de datos y todos los archivos subidos. Descárgalo una vez por semana y guárdalo fuera del hosting, por ejemplo en la unidad compartida del proyecto.</p></section>`:''}`;
+    ${user.role==='admin'?`<section class="detail-panel resource-detail"><h2>Respaldos</h2><div id="backup-reminder" role="status"></div><div id="backup-info" class="helper">Cargando…</div><a class="button secondary small" href="/api/admin/backup" download>Descargar respaldo completo (.zip) ↧</a><p class="helper">Incluye la base de datos y todos los archivos subidos. Descárgalo una vez por semana y guárdalo fuera del hosting, por ejemplo en la unidad compartida del proyecto.</p></section>`:''}`;
   // Keep a long working panel navigable without presenting every tool as a competing action.
   const toc=document.createElement('nav'); toc.className='admin-toc'; toc.setAttribute('aria-label','Secciones del panel');
   const headings=[...main.querySelectorAll(':scope > section > h2, :scope > section > .section-head > h2')];
@@ -569,6 +569,7 @@ async function moderatorPage() {
   toc.innerHTML=`<label for="admin-jump">Ir directamente a</label><select id="admin-jump" class="select"><option value="" selected>Elige una tarea del panel</option><optgroup label="Preparar la asignatura">${options(0,5)}</optgroup><optgroup label="Seguimiento del curso">${options(5,11)}<option value="moderation">Revisión pendiente</option></optgroup>${user.role==='admin'?`<optgroup label="Administración del sitio">${options(11,headings.length)}</optgroup>`:''}</select><button class="button secondary small" type="button" id="admin-jump-go">Ir</button>`;
   toc.addEventListener('click',e=>{if(e.target.id!=='admin-jump-go')return;const value=document.querySelector('#admin-jump').value;if(value==='')return;const target=value==='moderation'?document.querySelector('#moderation-content'):headings[Number(value)];target.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});});
   main.querySelector('.lead').after(toc);
+  if(user.role==='admin'){const banner=document.createElement('div');banner.id='backup-banner';toc.after(banner);}
   bindAccessCodes();
   bindMembers();
   loadMembers();
@@ -579,7 +580,7 @@ async function moderatorPage() {
   bindSurveys();
   loadCohorts().then(()=>{bindIndicators();bindTracking();bindReportLinks();});
   if(user.role==='admin'){bindStaff();bindPrivacy();loadAudit();}
-  if(user.role==='admin') loadBackups();
+  if(user.role==='admin'){loadBackups();document.querySelector('a[href="/api/admin/backup"]')?.addEventListener('click',()=>setTimeout(loadBackups,4000));}
   const uploadForm=document.querySelector('#resource-upload-form');
   uploadForm.addEventListener('submit',async event=>{event.preventDefault();const button=uploadForm.querySelector('button');const error=document.querySelector('#resource-upload-error');const file=document.querySelector('#r-file').files[0], content=document.querySelector('#r-content').value;if(!file&&!content.trim()){error.textContent='Escribe el texto del material o adjunta un archivo.';return;}if(file&&file.size>8*1024*1024){error.textContent='El archivo debe pesar como máximo 8 MB.';return;}button.disabled=true;error.textContent='Guardando…';try{const result=await api('/api/admin/resources',{method:'POST',body:JSON.stringify({project_id:document.querySelector('#r-project').value,title:document.querySelector('#r-title').value,category:document.querySelector('#r-category').value,summary:document.querySelector('#r-summary').value,tags:document.querySelector('#r-tags').value,content,status:document.querySelector('#r-draft').checked?'draft':'published',filename:file?.name||'',file_base64:file?await fileToBase64(file):''})});notify(result.message);uploadForm.reset();error.textContent='';resourceCache={};loadMaterials();}catch(ex){error.textContent=ex.message;}finally{button.disabled=false;}});
   try {
@@ -824,27 +825,48 @@ async function reportPage(projectId) {
 }
 async function projectionPage(projectId) {
   const params=new URLSearchParams(location.search), cohort=params.get('cohorte')||'';
-  let items=[], index=0, section=params.get('paralelo')||'', remaining=300, timer=null;
-  const sections=projectConfig[projectId]?.sections||[];
+  const SLOT=300; let items=[], index=0, section=params.get('paralelo')||'', deadline=0, left=SLOT, timer=null;
+  const sections=projectConfig[projectId]?.sections||[], canFull=!!document.documentElement.requestFullscreen;
   const load=async()=>{items=await api(`/api/admin/projection?project=${projectId}&cohort=${encodeURIComponent(cohort)}&section=${encodeURIComponent(section)}`);index=0;draw();};
-  const tick=()=>{remaining=Math.max(0,remaining-1);const t=document.querySelector('#proj-timer');if(t){t.textContent=`${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`;t.classList.toggle('timer-ending',remaining<=30);}if(!remaining){clearInterval(timer);timer=null;}};
-  const draw=()=>{clearInterval(timer);timer=null;remaining=300;const it=items[index];
+  // The countdown follows the clock, not the number of ticks: browsers slow timers in background tabs.
+  const remaining=()=>timer?Math.max(0,Math.ceil((deadline-Date.now())/1000)):left;
+  const paint=()=>{const r=remaining(), t=document.querySelector('#proj-timer'), b=document.querySelector('#proj-start');
+    if(t){t.textContent=r?`${Math.floor(r/60)}:${String(r%60).padStart(2,'0')}`:'¡Tiempo!';t.classList.toggle('timer-ending',r<=30);}
+    if(b) b.textContent=timer?'Pausar':(left<SLOT&&left>0?'Reanudar':'Iniciar 5 min');
+    if(timer&&!r){clearInterval(timer);timer=null;left=0;paint();}};
+  const toggle=()=>{if(timer){left=remaining();clearInterval(timer);timer=null;}else{if(left<=0)left=SLOT;deadline=Date.now()+left*1000;timer=setInterval(paint,250);}paint();};
+  const reset=()=>{clearInterval(timer);timer=null;left=SLOT;paint();};
+  const fullscreen=()=>document.fullscreenElement?document.exitFullscreen?.():document.documentElement.requestFullscreen?.();
+  const move=(step,focusId)=>{const next=index+step;if(next<0||next>=items.length)return;index=next;draw(focusId);};
+  const draw=(focusId)=>{reset();const it=items[index];
     main.innerHTML=`<div class="projection project-page ${projectId==='innova'?'innova-theme':''}"><div class="projection-bar no-print"><a class="back-link" href="/admin" data-route="/admin">← Panel</a>
       ${sections.length?`<label><span class="visually-hidden">Paralelo</span><select id="proj-section" class="select"><option value="">Todos los paralelos</option>${sections.map(x=>`<option${x===section?' selected':''}>${esc(x)}</option>`).join('')}</select></label>`:''}
-      <span class="helper">${items.length?`${index+1} de ${items.length}`:'Sin trabajos publicados'}</span><button class="button secondary small" type="button" id="proj-full">Pantalla completa</button></div>
-      ${it?`<div class="projection-main"><div><div class="eyebrow">${esc(it.team_name)}${it.section?' · '+esc(it.section):''}</div><h1>${esc(it.title)}</h1>
-        ${it.embed_url?`<div class="video-frame"><iframe src="${esc(it.embed_url)}" title="Video: ${esc(it.title)}" allow="encrypted-media; picture-in-picture; fullscreen"></iframe></div>`:`<p><a class="button" href="${esc(it.media_url)}" target="_blank" rel="noopener noreferrer">Abrir el video ↗</a></p>`}</div>
+      <span class="helper" role="status">${items.length?`${index+1} de ${items.length}`:'Sin trabajos publicados'}</span>${canFull?`<button class="button secondary small" type="button" id="proj-full">${document.fullscreenElement?'Salir de pantalla completa':'Pantalla completa'}</button>`:''}
+      <span class="helper projection-keys">Teclado: ← → cambiar trabajo · Espacio iniciar o pausar${canFull?' · F pantalla completa':''}. Si hiciste clic en el video, haz clic fuera de él para volver a usar el teclado.</span></div>
+      ${it?`<div class="projection-main"><div><div class="eyebrow">${esc(it.team_name)}${it.section?' · '+esc(it.section):''}</div><h1 id="proj-title" tabindex="-1">${esc(it.title)}</h1>
+        ${it.embed_url?`<div class="video-frame"><iframe src="${esc(it.embed_url)}" title="Video: ${esc(it.title)}" allow="encrypted-media; picture-in-picture; fullscreen"></iframe></div>
+          <p class="helper">¿No se ve el video? <a href="${esc(it.media_url)}" target="_blank" rel="noopener noreferrer">Ábrelo en una pestaña nueva ↗</a>. El QR y el temporizador siguen funcionando.</p>`
+          :`<p><a class="button" href="${esc(it.media_url)}" target="_blank" rel="noopener noreferrer">Abrir el video en una pestaña nueva ↗</a></p><p class="helper">Este enlace no se puede mostrar dentro de la página.</p>`}</div>
         <aside class="projection-side"><div class="timer" id="proj-timer" aria-live="off">5:00</div><div class="moderation-actions"><button class="button small" type="button" id="proj-start">Iniciar 5 min</button><button class="button secondary small" type="button" id="proj-reset">Reiniciar</button></div>
           <img src="/api/admin/qr.svg?path=${encodeURIComponent(it.path)}" alt="Código QR para coevaluar este trabajo"><p class="helper">Escanea para coevaluar este trabajo</p>
           <div class="moderation-actions"><button class="button secondary small" type="button" id="proj-prev"${index===0?' disabled':''}>← Anterior</button><button class="button small" type="button" id="proj-next"${index>=items.length-1?' disabled':''}>Siguiente →</button></div></aside></div>`
         :'<div class="empty-state">No hay trabajos publicados en esta cohorte o paralelo.</div>'}</div>`;
+    paint();
     document.querySelector('#proj-section')?.addEventListener('change',e=>{section=e.target.value;load();});
-    document.querySelector('#proj-full')?.addEventListener('click',()=>document.documentElement.requestFullscreen?.());
-    document.querySelector('#proj-start')?.addEventListener('click',()=>{if(!timer)timer=setInterval(tick,1000);});
-    document.querySelector('#proj-reset')?.addEventListener('click',()=>{clearInterval(timer);timer=null;remaining=301;tick();});
-    document.querySelector('#proj-prev')?.addEventListener('click',()=>{index--;draw();});
-    document.querySelector('#proj-next')?.addEventListener('click',()=>{index++;draw();});};
-  document.onkeydown=e=>{if(!location.pathname.startsWith('/proyeccion/'))return;if(e.target.closest('input,select,textarea'))return;if(e.key==='ArrowRight'&&index<items.length-1){index++;draw();}if(e.key==='ArrowLeft'&&index>0){index--;draw();}};
+    document.querySelector('#proj-full')?.addEventListener('click',fullscreen);
+    document.querySelector('#proj-start')?.addEventListener('click',toggle);
+    document.querySelector('#proj-reset')?.addEventListener('click',reset);
+    document.querySelector('#proj-prev')?.addEventListener('click',()=>move(-1,'proj-prev'));
+    document.querySelector('#proj-next')?.addEventListener('click',()=>move(1,'proj-next'));
+    // Keep keyboard users where they were; at either end the disabled button gives way to the other one.
+    if(focusId){const target=document.getElementById(focusId);(target&&!target.disabled?target:document.querySelector('#proj-prev:not([disabled]),#proj-next:not([disabled])')||document.querySelector('#proj-title'))?.focus();}};
+  document.onfullscreenchange=()=>{const b=document.querySelector('#proj-full');if(b)b.textContent=document.fullscreenElement?'Salir de pantalla completa':'Pantalla completa';};
+  document.onvisibilitychange=()=>{if(location.pathname.startsWith('/proyeccion/'))paint();};
+  document.onkeydown=e=>{if(!location.pathname.startsWith('/proyeccion/')||e.altKey||e.ctrlKey||e.metaKey)return;
+    const el=e.target instanceof Element?e.target:null;if(el?.closest('input,select,textarea'))return;
+    if(e.key==='ArrowRight')move(1,'proj-title');else if(e.key==='ArrowLeft')move(-1,'proj-title');
+    else if(e.key===' '&&!el?.closest('button,a')){e.preventDefault();toggle();}
+    else if((e.key==='f'||e.key==='F')&&canFull)fullscreen();};
   try{await load();}catch(e){main.innerHTML=`<div class="empty-state"><h1>Modo proyección no disponible</h1><p>${esc(e.message)}</p></div>`;}
 }
 function surveysPanel() {
@@ -908,7 +930,7 @@ function auditPanel() {
 }
 async function loadAudit(offset=0) {
   const box=document.querySelector('#admin-audit-list'); if(!box)return;
-  const labels={sos_login:'Ingreso con código SOS',course_code_login:'Ingreso con código del curso',course_code_created:'Creación de código del curso',course_code_disabled:'Desactivación de código del curso',staff_added:'Incorporación al equipo docente',staff_removed:'Retiro del equipo docente',membership_revoked:'Retiro de acceso',person_anonymized:'Anonimización de persona',cohort_anonymized:'Anonimización de cohorte'};
+  const labels={sos_login:'Ingreso con código SOS',full_backup_downloaded:'Descarga del respaldo completo',course_code_login:'Ingreso con código del curso',course_code_created:'Creación de código del curso',course_code_disabled:'Desactivación de código del curso',staff_added:'Incorporación al equipo docente',staff_removed:'Retiro del equipo docente',membership_revoked:'Retiro de acceso',person_anonymized:'Anonimización de persona',cohort_anonymized:'Anonimización de cohorte'};
   const entityNames={join_code:'Código',staff_role:'Rol docente',membership:'Acceso',user:'Cuenta',cohort:'Cohorte',sos:'Ingreso SOS'};
   const rowMarkup=r=>`<tr><td>${new Date(r.created_at*1000).toLocaleString('es-CL')}</td><td>${esc(labels[r.event_type]||r.event_type)}</td><td>${esc(r.actor_email||'—')}</td><td>${esc(r.subject_email||'—')}</td><td>${esc(PROJECTS[r.project_id]?.name||'—')}</td><td>${esc(entityNames[r.entity_type]||'—')}${r.entity_id?` #${Number(r.entity_id)}`:''}</td><td>${r.ip_hash?`<code title="Huella HMAC de IP con sal">${esc(r.ip_hash.slice(0,16))}…</code>`:'—'}</td></tr>`;
   try{const rows=await api(`/api/admin/audit?offset=${offset}`);
@@ -966,6 +988,12 @@ async function loadPeerSummary() {
 async function loadBackups() {
   const box=document.querySelector('#backup-info'); if(!box)return;
   try{const info=await api('/api/admin/backups'), last=info.backups[0];
+    const reminder=document.querySelector('#backup-reminder'), d=info.days_since_download, when=info.last_download?new Date(info.last_download.at*1000).toLocaleDateString('es-CL'):'';
+    const banner=document.querySelector('#backup-banner');
+    if(banner) banner.innerHTML=info.download_overdue?`<div class="notice warning">Respaldo pendiente: ${info.last_download?`el último respaldo completo se descargó hace ${d} días`:'aún no se ha descargado ningún respaldo completo'}. <a href="#backup-reminder">Ir a Respaldos</a></div>`:'';
+    if(reminder) reminder.innerHTML=info.download_overdue
+      ?`<div class="notice warning">${info.last_download?`El último respaldo completo se descargó hace ${d} días (${esc(when)}, ${esc(info.last_download.by)}).`:'Aún no se ha descargado ningún respaldo completo.'} Descarga uno y guárdalo fuera del hosting: las copias automáticas quedan en el mismo disco.</div>`
+      :`<p class="helper">Último respaldo completo descargado: ${d===0?'hoy':`hace ${d} ${d===1?'día':'días'}`} (${esc(when)}, ${esc(info.last_download.by)}).</p>`;
     box.innerHTML=info.enabled?`Copia automática de la base cada ${info.every_hours} h (se guardan las últimas ${info.keep}). ${last?`Última: ${new Date(last.created_at*1000).toLocaleString('es-CL')} · ${(last.size/1024).toFixed(0)} KB.`:'Aún no se genera la primera.'}`:'Las copias automáticas están desactivadas (APP_BACKUP_HOURS=0).';
   }catch(ex){box.textContent=ex.message;}
 }
