@@ -49,7 +49,7 @@ Todo se hace desde **Revisión** (arriba a la derecha) → panel docente. Arriba
 - **Retirar acceso:** se hace en «Integrantes con acceso». Para devolverlo, genera un código personal para esa persona.
 - **Solicitudes de datos:** descarga en JSON todo lo que hay de una persona, o elimínalo con doble confirmación.
 - **Cierre de cohorte:** no lo ejecutes sin acordar antes qué se conservará y por cuánto tiempo. La acción guarda un respaldo completo que contiene datos y después anonimiza cuentas, pero no borra esos respaldos automáticamente.
-- **Respaldos:** descarga el respaldo completo una vez por semana y guárdalo fuera del sitio.
+- **Respaldos:** descarga el respaldo completo una vez por semana y guárdalo fuera del sitio. Si pasan 7 días sin descargarlo, el panel lo avisa arriba.
 
 ## Si algo falla
 
