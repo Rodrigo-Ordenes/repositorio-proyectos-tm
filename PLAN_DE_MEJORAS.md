@@ -297,7 +297,7 @@ La revisión por roles, el cruce con las fuentes del curso, las mejoras aplicada
 |---|---|---|---|
 | 1 | Ficha de evidencia generada desde el formulario (imprimible en PDF) | Ambos | `/ficha/<id>` |
 | 2 | Modo proyección para la sesión del 18 de noviembre: videos en secuencia, temporizador y QR de coevaluación | Ambos | `/proyeccion/<proyecto>` |
-| 3 | Tabla de alternativas: hasta 3 ideas puntuadas 1–3 en los 7 criterios de la postulación | Incentiva | Formulario de entrega |
+| 3 | Tabla de alternativas: hasta 3 ideas con un porcentaje (0–100 %) en cada uno de los 7 criterios de la postulación y su promedio | Incentiva | Formulario de entrega |
 | 4 | Agrupación de dudas de los tiquetes: categorías, duda dominante, palabras frecuentes y CSV con categorías | Ambos | Panel docente |
 | 5 | Visor 3D de prototipos (STL, hasta 8 MB) | Innova | Ficha y detalle del recurso |
 | 6 | Preguntas previas a la sesión (aula invertida), como tipo de tiquete | Innova (y Incentiva) | Panel docente |

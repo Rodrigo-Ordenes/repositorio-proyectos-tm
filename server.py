@@ -994,7 +994,7 @@ def cohort_window(db, name):
 
 
 def clean_alternatives(raw):
-    """Alternative solutions scored 1–3 on each criterion of the Incentiva form; returns (dict, error)."""
+    """Alternative solutions scored 0–100 % on each criterion of the Incentiva form; returns (dict, error)."""
     if not raw: return {}, ""
     if not isinstance(raw, dict) or not isinstance(raw.get("items"), list): return None, "Las alternativas no tienen el formato esperado."
     items = []
@@ -1003,13 +1003,14 @@ def clean_alternatives(raw):
         name = str(entry.get("name", "")).strip()[:160]
         scores = entry.get("scores")
         if not name: continue
-        if not isinstance(scores, list) or len(scores) != len(ALTERNATIVE_CRITERIA) or not all(isinstance(v, int) and 1 <= v <= 3 for v in scores):
-            return None, f"Puntúa de 1 a 3 cada criterio de la alternativa «{name[:40]}»."
-        items.append({"name": name, "scores": scores, "total": sum(scores)})
+        if not isinstance(scores, list) or len(scores) != len(ALTERNATIVE_CRITERIA) or not all(isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 100 for v in scores):
+            return None, f"Puntúa cada criterio de la alternativa «{name[:40]}» de 0 a 100 %."
+        # Percentages per criterion; the average (not a sum) compares the ideas.
+        items.append({"name": name, "scores": scores, "average": round(sum(scores) / len(scores))})
     if not items: return {}, ""
     try: chosen = int(raw.get("chosen", 0))
     except (TypeError, ValueError): chosen = 0
-    return {"criteria": ALTERNATIVE_CRITERIA, "items": items, "chosen": chosen if 0 <= chosen < len(items) else 0}, ""
+    return {"criteria": ALTERNATIVE_CRITERIA, "scale": "percent", "items": items, "chosen": chosen if 0 <= chosen < len(items) else 0}, ""
 
 
 def valid_stl(data: bytes) -> bool:
