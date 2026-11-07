@@ -88,7 +88,7 @@ bash pruebas/ejecutar.sh            # todas las suites
 bash pruebas/ejecutar.sh seguridad  # una sola suite
 ```
 
-Cada suite levanta el servidor en el puerto 8766 con una base temporal que se borra al terminar: no toca tus datos. Necesita `python3`, `curl` y `sqlite3`. Las suites son `acceso`, `entregas_y_materiales`, `foro_tiquetes_vitrina`, `encuestas_indicadores_datos`, `seguridad` y `paginas_publicas`. GitHub Actions las ejecuta en cada cambio que se sube (`.github/workflows/pruebas.yml`).
+Cada suite levanta el servidor en el puerto 8766 con una base temporal que se borra al terminar: no toca tus datos. Necesita `python3`, `curl` y `sqlite3`. Las suites cubren acceso, entregas y materiales, foro y tiquetes, encuestas e indicadores, seguridad, páginas públicas, mejoras, trazabilidad de ingresos y auditoría global. GitHub Actions las ejecuta en cada cambio que se sube (`.github/workflows/pruebas.yml`).
 
 ## Acceso: tres vías, ninguna depende de TI PUCV
 

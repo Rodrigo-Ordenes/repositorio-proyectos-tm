@@ -100,9 +100,10 @@ Con eso se activan el enlace de ingreso por correo y los avisos de acceso aproba
 ## 7. Mantenerlo
 
 - **Respaldo fuera del sitio, una vez por semana:** en el panel, pulsa «respaldo completo (.zip)» y guárdalo en un lugar del equipo. El sitio hace copias automáticas, pero quedan en el mismo disco.
+- **Registro de auditoría:** en el panel de administración global revisa ingresos SOS y del curso, cambios de códigos y equipo docente, retiros de acceso y anonimización. Se conserva por 180 días; las IP se guardan como huellas HMAC con una sal aleatoria persistida en la base, nunca en claro.
 - **Aviso si se cae:** crea un monitor gratuito en UptimeRobot (o similar) sobre `https://TU-SITIO/api/me`. Avisa por correo si deja de responder.
 - **Nuevo semestre:** en el panel, **Cohortes → Abrir cohorte**. No se borra nada.
-- **Actualizar:** `git push` a `main`. GitHub Actions corre las 278 pruebas en cada envío; si fallan, no conviene desplegar.
+- **Actualizar:** `git push` a `main`. GitHub Actions ejecuta las suites automatizadas en cada envío; si fallan, no conviene desplegar.
 
 ## 8. Antes de una grabación o una clase
 
@@ -145,5 +146,5 @@ Con eso se activan el enlace de ingreso por correo y los avisos de acceso aproba
 | Gráficos y 3D | SVG generado en el navegador; visor STL propio en canvas | Sin librerías externas; cada gráfico tiene tabla de datos |
 | QR | Generador propio (`qr.py`) | Funciona sin servicios externos |
 | Videos | YouTube (no listado) o Google Drive, embebidos con `youtube-nocookie` | El sitio no almacena video |
-| Pruebas | 278 verificaciones en `pruebas/*.sh` con `curl`, ejecutadas por GitHub Actions | Cada cambio se prueba antes de publicarse |
+| Pruebas | Suites automatizadas en `pruebas/*.sh` con `curl`, ejecutadas por GitHub Actions | Cada cambio se prueba antes de publicarse |
 | Hosting | Render (Blueprint `render.yaml`) con disco persistente | Despliegue en un clic desde GitHub, con HTTPS incluido |
