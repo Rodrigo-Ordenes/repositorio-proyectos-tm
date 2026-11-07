@@ -595,12 +595,21 @@ def add_missing_columns(db, table, columns):
         if column not in existing: db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
-def record_audit_event(db, event_type, actor_email="", subject_email="", project_id="", entity_type="", entity_id=None, now=None):
+def record_audit_event(db, event_type, actor_email="", subject_email="", project_id="", entity_type="", entity_id=None, now=None, ip_hash=""):
     """Store a bounded-retention audit event without tying it to a deletable user row."""
     created_at = int(time.time() if now is None else now)
     purge_audit_events(db, created_at)
-    db.execute("""INSERT INTO audit_events(event_type,actor_email,subject_email,project_id,entity_type,entity_id,created_at)
-      VALUES(?,?,?,?,?,?,?)""", (event_type, actor_email, subject_email, project_id, entity_type, entity_id, created_at))
+    db.execute("""INSERT INTO audit_events(event_type,actor_email,subject_email,project_id,entity_type,entity_id,ip_hash,created_at)
+      VALUES(?,?,?,?,?,?,?,?)""", (event_type, actor_email, subject_email, project_id, entity_type, entity_id, ip_hash, created_at))
+
+
+def audit_ip_hash(db, address):
+    """HMAC the client address with a random installation salt stored outside the repository."""
+    row = db.execute("SELECT value FROM settings WHERE key='audit_ip_salt'").fetchone()
+    if not row:
+        db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('audit_ip_salt',?)", (secrets.token_hex(32),))
+        row = db.execute("SELECT value FROM settings WHERE key='audit_ip_salt'").fetchone()
+    return hmac.new(bytes.fromhex(row["value"]), str(address or "").encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def purge_audit_events(db, now=None):
@@ -1202,7 +1211,7 @@ class App(BaseHTTPRequestHandler):
         # Magic-link tokens and Google authorization codes are in these URLs; never log those request lines.
         if self.path.startswith(("/auth/verify?", "/auth/google/callback?")):
             return
-        super().log_message(fmt, *args)
+        sys.stderr.write(f"{self.log_date_time_string()} {fmt % args}\n")
 
     def client_ip(self):
         if TRUST_PROXY and self.headers.get("X-Forwarded-For"):
@@ -1443,6 +1452,20 @@ class App(BaseHTTPRequestHandler):
             files = sorted(BACKUP_DIR.glob("respaldo-*.sqlite3"), reverse=True) if BACKUP_DIR.is_dir() else []
             return self.json({"enabled": BACKUP_HOURS > 0, "every_hours": BACKUP_HOURS, "keep": BACKUP_KEEP,
                               "backups": [{"name": f.name, "size": f.stat().st_size, "created_at": int(f.stat().st_mtime)} for f in files[:BACKUP_KEEP]]})
+        if path == "/api/admin/audit":
+            user = self.require_user()
+            if not user: return
+            if user["role"] != "admin": return self.json({"error": "Solo la administración global puede consultar la auditoría."}, 403)
+            now = int(time.time())
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try: offset = max(0, int(query.get("offset", ["0"])[0]))
+            except (TypeError, ValueError): offset = 0
+            with connect() as db:
+                purge_audit_events(db, now)
+                rows = db.execute("""SELECT event_type,actor_email,subject_email,project_id,entity_type,entity_id,ip_hash,created_at
+                  FROM audit_events WHERE created_at>=? ORDER BY created_at DESC,id DESC LIMIT 500 OFFSET ?""",
+                  (now - AUDIT_RETENTION_DAYS * 86400, offset)).fetchall()
+            return self.json([dict(row) for row in rows])
         if path == "/api/admin/backup":
             user = self.require_user()
             if not user: return
@@ -1912,14 +1935,16 @@ class App(BaseHTTPRequestHandler):
                     if row["section"]:
                         db.execute("UPDATE project_memberships SET section=? WHERE user_id=? AND project_id=? AND status='active' AND section=''",
                                    (row["section"], user["id"], project))
-                    record_audit_event(db, "course_code_login", user["email"], user["email"], project, "join_code", row["id"])
+                    record_audit_event(db, "course_code_login", user["email"], user["email"], project, "join_code", row["id"],
+                                       ip_hash=audit_ip_hash(db, self.client_ip()))
                     return self.json({"ok": True, "project_id": project, "message": "Ya tenías acceso a esta asignatura."})
                 member = db.execute("SELECT revoked FROM project_memberships WHERE user_id=? AND project_id=?", (user["id"], project)).fetchone()
                 if member and member["revoked"]:
                     return self.json({"error": "Tu acceso a esta asignatura fue retirado. Contacta a la docente."}, 403)
                 # A code created for one paralelo also records it, so deliveries and the catalog can be filtered by section.
                 apply_join_code(db, user["id"], row)
-                record_audit_event(db, "course_code_login", user["email"], user["email"], project, "join_code", row["id"])
+                record_audit_event(db, "course_code_login", user["email"], user["email"], project, "join_code", row["id"],
+                                   ip_hash=audit_ip_hash(db, self.client_ip()))
             return self.json({"ok": True, "project_id": project, "message": f"Listo: ya tienes acceso a {PROJECTS[project]['name']}."})
         if path == "/api/admin/join-codes":
             user = self.require_user()
@@ -1944,9 +1969,12 @@ class App(BaseHTTPRequestHandler):
                 for _ in range(5):
                     code = new_code()
                     try:
-                        db.execute("""INSERT INTO join_codes(code,project_id,label,section,created_by,created_at,expires_at,max_uses,cohort,roster)
+                        created = db.execute("""INSERT INTO join_codes(code,project_id,label,section,created_by,created_at,expires_at,max_uses,cohort,roster)
                           VALUES(?,?,?,?,?,?,?,?,?,?)""", (code, project, label, section, user["id"], now, now + days * 86400, max_uses, current_cohort(db),
                                                          "\n".join(roster)))
+                        record_audit_event(db, "course_code_created", user["email"], project_id=project,
+                                           entity_type="join_code", entity_id=created.lastrowid,
+                                           ip_hash=audit_ip_hash(db, self.client_ip()))
                         break
                     except sqlite3.IntegrityError:
                         continue
@@ -1957,9 +1985,12 @@ class App(BaseHTTPRequestHandler):
             try: code_id = int(payload.get("id", 0))
             except (TypeError, ValueError): return self.json({"error": "Identificador inválido."}, 400)
             with connect() as db:
-                row = db.execute("SELECT project_id FROM join_codes WHERE id=?", (code_id,)).fetchone()
+                row = db.execute("SELECT project_id,active FROM join_codes WHERE id=?", (code_id,)).fetchone()
                 if not row or row["project_id"] not in self.managed_projects(user): return self.json({"error": "No tienes permiso para este código."}, 403)
-                db.execute("UPDATE join_codes SET active=0 WHERE id=?", (code_id,))
+                changed = db.execute("UPDATE join_codes SET active=0 WHERE id=? AND active=1", (code_id,))
+                if changed.rowcount:
+                    record_audit_event(db, "course_code_disabled", user["email"], project_id=row["project_id"],
+                                       entity_type="join_code", entity_id=code_id, ip_hash=audit_ip_hash(db, self.client_ip()))
             return self.json({"ok": True})
         if path == "/api/admin/access-codes":
             user = self.require_user()
@@ -2329,9 +2360,15 @@ class App(BaseHTTPRequestHandler):
             if not email or project not in PROJECTS: return self.json({"error": "Indica un correo PUCV y la asignatura."}, 400)
             with connect() as db:
                 if payload.get("action") == "remove":
-                    db.execute("DELETE FROM staff_roles WHERE email=? AND project_id=?", (email, project))
+                    changed = db.execute("DELETE FROM staff_roles WHERE email=? AND project_id=?", (email, project))
+                    if changed.rowcount:
+                        record_audit_event(db, "staff_removed", user["email"], email, project, "staff_role",
+                                           ip_hash=audit_ip_hash(db, self.client_ip()))
                     return self.json({"ok": True, "message": "Rol docente retirado."})
-                db.execute("INSERT OR IGNORE INTO staff_roles(email,project_id,created_by) VALUES(?,?,?)", (email, project, user["id"]))
+                changed = db.execute("INSERT OR IGNORE INTO staff_roles(email,project_id,created_by) VALUES(?,?,?)", (email, project, user["id"]))
+                if changed.rowcount:
+                    record_audit_event(db, "staff_added", user["email"], email, project, "staff_role",
+                                       ip_hash=audit_ip_hash(db, self.client_ip()))
             return self.json({"ok": True, "message": f"{email} ahora gestiona {PROJECTS[project]['name']}. El cambio rige de inmediato."}, 201)
         if path == "/api/admin/surveys":
             user = self.require_user()
@@ -2399,6 +2436,8 @@ class App(BaseHTTPRequestHandler):
                     row = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
                     if not row: return self.json({"error": "No hay una cuenta con ese correo."}, 404)
                     files = anonymize_user(db, row["id"])
+                    record_audit_event(db, "person_anonymized", user["email"], email, entity_type="user",
+                                       ip_hash=audit_ip_hash(db, self.client_ip()))
                     message = "Datos de la persona eliminados. El contenido de sus respuestas no conserva nombre o correo; los trabajos publicados del equipo quedan sin su nombre."
                 else:
                     if str(payload.get("confirm", "")).strip() != "CERRAR COHORTE":
@@ -2406,6 +2445,8 @@ class App(BaseHTTPRequestHandler):
                     # A full archive is written first so the closure can be undone from the backup if it was a mistake.
                     archive = create_full_archive(BACKUP_DIR / f"antes-del-cierre-{time.strftime('%Y%m%d-%H%M%S')}.zip")
                     count, files = close_cohort(db)
+                    record_audit_event(db, "cohort_anonymized", user["email"], entity_type="cohort",
+                                       ip_hash=audit_ip_hash(db, self.client_ip()))
                     message = f"Cohorte cerrada: {count} cuentas anonimizadas. Respaldo previo: {archive.name}."
             for key in files:
                 if re.fullmatch(r"[a-f0-9]{40}", key or ""): (UPLOAD_DIR / key).unlink(missing_ok=True)
@@ -2442,6 +2483,8 @@ class App(BaseHTTPRequestHandler):
                     # Otherwise a still-valid personal code would re-grant the course at the next sign-in.
                     db.execute("UPDATE access_codes SET revoked_at=? WHERE email=? AND project_id=? AND revoked_at IS NULL",
                                (int(time.time()),member["email"],member["project_id"]))
+                    record_audit_event(db, "membership_revoked", user["email"], member["email"], member["project_id"],
+                                       "membership", item_id, ip_hash=audit_ip_hash(db, self.client_ip()))
                 return self.json({"ok":True})
             if kind == "comment" and decision in ("publish", "hide"):
                 status = "published" if decision == "publish" else "hidden"
@@ -2582,12 +2625,16 @@ class App(BaseHTTPRequestHandler):
         with connect() as db:
             if SOS and email == SOS["email"] and code and not is_rate_limited(db, f"code-email:{email}", 6, 15 * 60) \
                     and hmac.compare_digest(code_digest(code, SOS["salt"]), SOS["hash"]):
-                print(f"Ingreso con código SOS: {email} desde {self.client_ip()}", file=sys.stderr, flush=True)
+                print(f"Ingreso con código SOS: {email}", file=sys.stderr, flush=True)
                 sos_login = True
             else:
                 sos_login = False
         if sos_login:
-            return self.create_session(email, name_from_email(email), provider_subject="sos:" + email)
+            response = self.create_session(email, name_from_email(email), provider_subject="sos:" + email)
+            with connect() as db:
+                record_audit_event(db, "sos_login", email, email, entity_type="sos",
+                                   ip_hash=audit_ip_hash(db, self.client_ip()))
+            return response
         with connect() as db:
             buckets = (f"code-ip:{self.client_ip()}", f"code-email:{email}")
             if is_rate_limited(db, buckets[0], 120, 15 * 60) or (email and is_rate_limited(db, buckets[1], 6, 15 * 60)):

@@ -298,6 +298,9 @@ h2 { font-size: clamp(1.35rem, 2.5vw, 2rem); line-height: 1.16; }
 .code-entry-details td { overflow-wrap: anywhere; }
 .code-table { width: 100%; border-collapse: collapse; margin-top: .8rem; font-size: .92rem; }
 .code-table th, .code-table td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.audit-scroll { max-width: 100%; overflow-x: auto; }
+.audit-scroll .code-table { min-width: 54rem; }
+.audit-scroll td { overflow-wrap: anywhere; }
 .submission-status { display: grid; gap: .3rem; padding: .7rem 0; border-bottom: 1px solid var(--line); }
 .submission-status:last-child { border-bottom: 0; }
 .status-label { justify-self: start; font-size: .82rem; font-weight: 700; padding: .2rem .6rem; border-radius: 999px; background: var(--forest-soft); color: var(--forest); }

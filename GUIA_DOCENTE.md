@@ -42,6 +42,8 @@ Todo se hace desde **Revisión** (arriba a la derecha) → panel docente. Arriba
 
 - **Nueva cohorte:** al empezar el semestre siguiente, en «Cohortes» escribe el nombre (por ejemplo «2027-1») y pulsa «Abrir cohorte». Nada se borra; los códigos del curso se desactivan para que crees los nuevos.
 
+- **Registro de auditoría:** en «Revisión» → «Registro de auditoría» se consultan los ingresos con código SOS o del curso, y los cambios en códigos, equipo docente, accesos y anonimización. Solo lo ve la administración global; se conserva 180 días. La IP se guarda como una huella con sal, no como dirección legible.
+
 - **Equipo docente:** asigna o quita docentes por asignatura; el cambio rige de inmediato.
 - **Retirar acceso:** se hace en «Integrantes con acceso». Para devolverlo, genera un código personal para esa persona.
 - **Solicitudes de datos:** descarga en JSON todo lo que hay de una persona, o elimínalo con doble confirmación.
