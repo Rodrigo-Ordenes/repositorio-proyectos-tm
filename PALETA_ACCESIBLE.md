@@ -90,3 +90,14 @@ Las herramientas manuales equivalentes son el selector de color de Chrome DevToo
 ## Colores de los gráficos
 
 El informe final usa un par azul/naranja propio para los datos, separado de los acentos de interfaz (que no tienen la saturación ni el contraste que necesita una barra). Se validó con el validador de la guía de visualización sobre las superficies del sitio: banda de luminosidad, croma mínimo, separación con daltonismo (ΔE ≥ 24) y contraste ≥ 3:1, en claro y en oscuro. Cada gráfico escribe los valores y ofrece «Ver los datos en tabla».
+
+## Rampas ordinales (escalas KPSI y de percepción)
+
+Las barras apiladas 100 % del informe usan un solo tono azul, del nivel más bajo al más alto, validado con `validate_palette.js --ordinal` del skill de visualización (noviembre de 2026). Pasan las cuatro comprobaciones: luminosidad monótona, saltos visibles entre niveles, extremo cercano a la superficie ≥ 2:1 y un solo tono.
+
+| Tema | 4 niveles (KPSI) | 5 niveles (percepción) | Extremo vs. superficie |
+|---|---|---|---|
+| Claro (`#fffef9`) | `#86b6ef` `#5598e7` `#256abf` `#104281` | `#86b6ef` `#5598e7` `#2a78d6` `#1c5cab` `#0d366b` | 2,09:1 |
+| Oscuro (`#1d241f`) | `#1c5cab` `#3987e5` `#6da7ec` `#b7d3f6` | `#1c5cab` `#2a78d6` `#5598e7` `#86b6ef` `#cde2fb` | 2,39:1 |
+
+En oscuro se descartó empezar en `#184f95` (1,96:1, bajo el mínimo). Los porcentajes se escriben bajo cada barra en tinta de texto y en la tabla de datos; el color nunca es la única forma de leer el valor.
