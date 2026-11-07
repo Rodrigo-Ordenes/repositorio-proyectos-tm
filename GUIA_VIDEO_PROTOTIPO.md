@@ -1,11 +1,19 @@
 # Guía para el video final del equipo
 
+## En 3 pasos
+
+1. **Graba con el celular.** En horizontal, cerca de quien habla y sin ruido de fondo. Sirve una maqueta, un dibujo, una escena actuada o la pantalla.
+2. **Edita** con **Clipchamp** (gratis, en el navegador, con subtítulos automáticos) o **CapCut** (en el celular). En Innova, el modelo 3D se hace en **Tinkercad**; el archivo STL se sube en el mismo formulario de entrega.
+3. **Sube y pega el enlace.** YouTube como «No listado» o Drive con «Cualquier persona con el enlace», y pega el enlace en «Entregar trabajo». Si el enlace de Drive es privado, el formulario lo avisa.
+
+Las demás herramientas (Canva, Kdenlive, Audacity, diagrams.net, Blender, OpenToonz, Fusion 360 y las de IA opcional) siguen en el repositorio, bajo «Más opciones».
+
 ## Entrega
 
 - **Un único video final por equipo**, no seis clips ni seis entregas.
 - Duración máxima: **5 minutos**.
 - Una persona representante registra la entrega en el repositorio.
-- Entregar el enlace HTTPS al MP4 final y a la ficha de evidencia (PDF u otro archivo) en la carpeta compartida del equipo.
+- Entregar el enlace al video final (YouTube «No listado» o Drive «Cualquier persona con el enlace»). La ficha de evidencia la genera el repositorio desde el formulario; subir un archivo adicional es opcional.
 - Probar ambos enlaces en una ventana privada antes de enviarlos y confirmar que la docente pueda abrirlos.
 - Incorporar subtítulos o texto legible, narración clara y créditos de imágenes, música o recursos externos.
 
