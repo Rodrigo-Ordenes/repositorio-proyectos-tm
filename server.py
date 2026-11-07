@@ -1638,7 +1638,8 @@ class App(BaseHTTPRequestHandler):
                 # QR for a page of this site (a work shown on the projector), never for an outside address.
                 target = arg("path")
                 if not re.fullmatch(r"/(incentiva|innova)/recurso/[A-Za-z0-9-]{1,120}", target): return self.json({"error": "Ruta inválida."}, 400)
-                return self.send_bytes(qr.svg(BASE_URL + target).encode(), "image/svg+xml")
+                # Shown on the projector to rate that work: open it straight at the peer review.
+                return self.send_bytes(qr.svg(BASE_URL + target + "#coevaluacion").encode(), "image/svg+xml")
             with connect() as db:
                 if path == "/api/admin/cohorts":
                     items = cohorts(db)

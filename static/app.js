@@ -236,7 +236,7 @@ function showDelivery(projectId) {
       <div class="field"><label for="s-video">Enlace al único video final (MP4, máximo 5 minutos)</label><input id="s-video" name="video_url" type="url" required placeholder="https://"><span class="helper">Suban el MP4 a una carpeta compartida o plataforma de video y peguen aquí un enlace accesible para la docente. En Drive: Compartir → «Cualquier persona con el enlace».</span><div id="s-video-status" class="helper" role="status" aria-live="polite"></div></div>
       <div class="notice">La ${isInnova?'matriz diagnóstica':'Ficha de Evidencia'} se genera automáticamente con lo que escriban en este formulario: después de enviar, la pueden abrir, imprimir o guardar en PDF desde «Tus entregas». No hace falta llenar la plantilla Word.</div>
       ${isInnova?'<div class="field"><label for="s-model">Modelo 3D del prototipo (opcional)</label><input id="s-model" name="model_file" type="file" accept=".stl"><span class="helper">Archivo STL exportado desde Tinkercad, Fusion 360 o Blender; máximo 8 MB. Se verá en la ficha y se podrá girar.</span></div>':''}
-      <div class="field"><label for="s-evidence-file">Material adicional (opcional)</label><input id="s-evidence-file" name="evidence_file" type="file" accept=".pdf,.docx,.pptx,.xlsx,.odt,.txt"><span class="helper">Si quieren sumar anexos, tablas o la <a href="/materiales/${isInnova?'matriz-diagnostica-innova':'ficha-evidencia-incentiva'}.docx" download>plantilla Word</a> completa: PDF, DOCX, PPTX, XLSX, ODT o TXT, máximo 8 MB. También pueden pegar el enlace HTTPS de una carpeta compartida:</span><input id="s-evidence" name="evidence_url" type="url" placeholder="https://"></div>
+      <div class="field"><label for="s-evidence-file">Material adicional (opcional)</label><input id="s-evidence-file" name="evidence_file" type="file" accept=".pdf,.docx,.pptx,.xlsx,.odt,.txt"><span class="helper">Si quieren sumar anexos, tablas o la <a href="/materiales/${isInnova?'matriz-diagnostica-innova':'ficha-evidencia-incentiva'}.docx" download>plantilla Word</a> completa: PDF, DOCX, PPTX, XLSX, ODT o TXT, máximo 8 MB. </span><label for="s-evidence">Enlace a una carpeta compartida (opcional)</label><input id="s-evidence" name="evidence_url" type="url" placeholder="https://"></div>
       <div class="field"><label for="s-ai">Declaración de uso de IA</label><textarea id="s-ai" name="ai_declaration" placeholder="Indica qué herramienta usó el equipo y para qué. Si no usaron IA, escríbanlo."></textarea></div>
       <label class="helper"><input name="has_subtitles" type="checkbox"> El video tiene subtítulos (o texto en pantalla que permite seguirlo sin audio).</label>
       <label class="helper"><input name="video_length_confirmed" type="checkbox" required> Confirmamos que este es el único video final del equipo y que dura máximo cinco minutos.</label>
@@ -249,6 +249,15 @@ function showDelivery(projectId) {
     try{const {status}=await api(`/api/video-check?url=${encodeURIComponent(url)}`);
       box.textContent={public:'✓ El video de Drive se puede ver con el enlace.',private:'⚠ Este video de Drive es privado: el curso no podrá verlo. En Drive, Compartir → «Cualquier persona con el enlace».',missing:'⚠ No encontramos ese archivo en Drive. Revisa el enlace.'}[status]||'';
       box.className=status==='public'?'helper':(status==='unknown'?'helper':'error-text');}catch{box.textContent='';}});
+  // Local draft (only on this device): a long form must survive a reload or an expired session. Files are not kept.
+  const draftKey=`entrega-borrador:${projectId}:${user?.email||''}`, draftForm=document.querySelector('#submission-form');
+  const draftFields=()=>[...draftForm.elements].filter(el=>el.name&&!['file','checkbox','radio','submit','button'].includes(el.type));
+  try{const saved=JSON.parse(localStorage.getItem(draftKey)||'null');
+    if(saved&&Object.values(saved).some(v=>v)){draftFields().forEach(el=>{if(saved[el.name])el.value=saved[el.name];});
+      draftForm.insertAdjacentHTML('afterbegin','<div class="notice" id="draft-notice" role="status">Recuperamos lo que tu equipo había escrito en este dispositivo (los archivos hay que elegirlos de nuevo). <button class="text-button" type="button" id="draft-discard">Descartar borrador</button></div>');
+      document.querySelector('#draft-discard').addEventListener('click',()=>{try{localStorage.removeItem(draftKey);}catch{}draftForm.reset();document.querySelector('#draft-notice')?.remove();});}}catch{}
+  let draftTimer=null;
+  draftForm.addEventListener('input',()=>{clearTimeout(draftTimer);draftTimer=setTimeout(()=>{try{localStorage.setItem(draftKey,JSON.stringify(Object.fromEntries(draftFields().map(el=>[el.name,el.value]))));}catch{}},400);});
   document.querySelector('#submission-form').addEventListener('submit',async event=>{
     event.preventDefault(); const formElement=event.currentTarget, form=new FormData(formElement), error=document.querySelector('#submission-error'), button=formElement.querySelector('button[type="submit"]');
     try {
@@ -259,7 +268,7 @@ function showDelivery(projectId) {
       const evidence_file_base64=file?await fileToBase64(file):'', model_file_base64=model?await fileToBase64(model):'';
       const project_fields=Object.fromEntries(config.fields.map(f=>[f.key,form.get(`pf_${f.key}`)||'']));
       const res=await api('/api/submissions',{method:'POST',body:JSON.stringify({project_id:projectId,team_name:form.get('team_name'),section:form.get('section')||'',members:form.get('members'),title:form.get('title'),summary:form.get('summary'),video_url:form.get('video_url'),evidence_url:form.get('evidence_url'),evidence_file_base64,evidence_filename:file?.name||'',ai_declaration:form.get('ai_declaration'),project_fields,alternatives:readAlternatives(formElement,config.alternative_criteria||[]),model_file_base64,model_filename:model?.name||'',video_length_confirmed:form.get('video_length_confirmed')==='on',consent_confirmed:form.get('consent')==='on',has_subtitles:form.get('has_subtitles')==='on',showcase_consent:form.get('showcase_consent')==='on'})});
-      notify(res.message); formElement.reset(); error.textContent=''; await loadMySubmissions(projectId);
+      notify(res.message); clearTimeout(draftTimer); try{localStorage.removeItem(draftKey);}catch{} document.querySelector('#draft-notice')?.remove(); formElement.reset(); error.textContent=''; await loadMySubmissions(projectId);
       if(res.id) document.querySelector('#my-submissions').scrollIntoView({behavior:'smooth',block:'start'});
     }
     catch(err){error.textContent=err.message;}
@@ -486,13 +495,23 @@ function detailPage(projectId, slug, reader=false) {
       ${resource.quiz_count?'<section class="detail-panel"><h2>Preguntas de control</h2><div id="detail-quiz"><p class="helper">Cargando…</p></div></section>':''}
       ${student?`<section class="detail-panel"><h2>Ficha de evidencia</h2><div class="moderation-actions"><a class="button small" href="/ficha/${Number(resource.source_submission_id)}" data-route="/ficha/${Number(resource.source_submission_id)}">Ver la ficha generada →</a>${resource.has_evidence?`<a class="button secondary small" href="/api/submissions/${Number(resource.source_submission_id)}/evidence">Material adicional ↧</a>`:''}</div></section>`:''}
       ${resource.has_file?`<section class="detail-panel"><h2>Archivo del material</h2><a class="button small" href="/api/projects/${projectId}/resources/${encodeURIComponent(resource.slug)}/file">Descargar ${esc(resource.file_filename||'archivo del curso')} ↧</a></section>`:''}
-      <section class="detail-panel"><h2>Foro de esta ficha</h2><div id="detail-comments"><p class="helper">Cargando comentarios…</p></div></section>
-      ${student?'<section class="detail-panel"><h2>Coevaluación entre pares</h2><div id="detail-peer"><p class="helper">Cargando…</p></div></section>':''}`}`;
+      <section class="detail-panel" id="foro" tabindex="-1"><h2>Foro de esta ficha</h2><div id="detail-comments"><p class="helper">Cargando comentarios…</p></div></section>
+      ${student?'<section class="detail-panel" id="coevaluacion" tabindex="-1"><h2>Coevaluación entre pares</h2><div id="detail-peer"><p class="helper">Cargando…</p></div></section>':''}`}`;
     if(reader) return;
-    mountDiscussion(document.querySelector('#detail-comments'),projectId,resource);
-    if(resource.quiz_count) mountQuiz(document.querySelector('#detail-quiz'),resource);
+    // On a phone the forum and the peer review sit several screens down; the projection QR opens #coevaluacion directly.
+    root.querySelector('h1').insertAdjacentHTML('afterend',`<nav class="jump-links" aria-label="En esta ficha"><a href="#foro">Comentar ↓</a>${student?'<a href="#coevaluacion">Coevaluar ↓</a>':''}</nav>`);
+    root.querySelector('.jump-links').addEventListener('click',e=>{const a=e.target.closest('a');if(!a)return;e.preventDefault();const t=document.querySelector(a.getAttribute('href'));t?.scrollIntoView({block:'start'});t?.focus({preventScroll:true});history.replaceState(history.state,'',a.getAttribute('href'));});
+    const loading=[mountDiscussion(document.querySelector('#detail-comments'),projectId,resource)];
+    if(resource.quiz_count) loading.push(mountQuiz(document.querySelector('#detail-quiz'),resource));
     if(resource.has_model) mountStlViewer(root.querySelector('.stl-viewer'),`/api/submissions/${Number(resource.source_submission_id)}/model`);
-    if(student) mountPeer(document.querySelector('#detail-peer'),resource);
+    if(student) loading.push(mountPeer(document.querySelector('#detail-peer'),resource));
+    // Bring the anchor into view again once the sections above it have loaded (they change height), unless the person already moved.
+    const anchor=location.hash&&document.getElementById(location.hash.slice(1));
+    if(anchor&&anchor.closest('#detail-container')){
+      let moved=false; const events=['wheel','touchstart','keydown','pointerdown'], mark=()=>{moved=true;events.forEach(t=>removeEventListener(t,mark));};
+      const keep=()=>{if(!moved&&anchor.isConnected)anchor.scrollIntoView({block:'start'});};
+      keep();anchor.focus({preventScroll:true});events.forEach(t=>addEventListener(t,mark,{passive:true}));
+      Promise.allSettled(loading).then(()=>{keep();setTimeout(keep,400);setTimeout(()=>{keep();mark();},1200);});}
   }).catch(e=>document.querySelector('#detail-container').innerHTML=`<div class="empty-state">${esc(e.message)}</div>`);
 }
 function login(error='') {
@@ -511,7 +530,8 @@ function login(error='') {
       ${window.APP_DEMO?`<div class="login-separator"></div><details class="demo-panel"><summary>Modo de demostración local</summary><div class="notice warning">Esta entrada solo sirve para revisar el prototipo en este computador. No verifica que la dirección pertenezca a una persona PUCV.</div><form id="demo-form" class="form-grid"><div class="field"><label for="demo-email">Correo institucional de ejemplo</label><input id="demo-email" type="email" placeholder="nombre@mail.pucv.cl" required></div><div class="error-text" id="demo-error" role="alert"></div><button class="button secondary" type="submit">Abrir demostración</button></form></details>`:''}
       <p class="helper spaced-top">Si tienes problemas con el acceso, contacta al equipo docente del curso. <a href="/privacidad" data-route="/privacidad">Aviso de privacidad</a>.</p></div></section>`;
   const form=document.querySelector('#demo-form'); if(form) form.addEventListener('submit',async e=>{e.preventDefault();const errorBox=document.querySelector('#demo-error');try{await api('/auth/demo',{method:'POST',body:JSON.stringify({email:document.querySelector('#demo-email').value})});await bootstrap();}catch(ex){errorBox.textContent=ex.message;}});
-  const codeForm=document.querySelector('#code-form'); if(codeForm) codeForm.addEventListener('submit',async e=>{e.preventDefault();const errorBox=document.querySelector('#code-error');const button=codeForm.querySelector('button');button.disabled=true;errorBox.textContent='';try{await api('/auth/code',{method:'POST',body:JSON.stringify({email:document.querySelector('#code-email').value,code:document.querySelector('#code-value').value})});history.replaceState({},'','/');await bootstrap();}catch(ex){errorBox.textContent=ex.message;}finally{button.disabled=false;}});
+  if(params.has('unirse')) document.querySelector('#code-email')?.focus();
+  const codeForm=document.querySelector('#code-form'); if(codeForm) codeForm.addEventListener('submit',async e=>{e.preventDefault();const errorBox=document.querySelector('#code-error');const button=codeForm.querySelector('button');button.disabled=true;errorBox.textContent='';try{await api('/auth/code',{method:'POST',body:JSON.stringify({email:document.querySelector('#code-email').value,code:document.querySelector('#code-value').value})});history.replaceState({},'','/');await bootstrap();window.scrollTo(0,0);}catch(ex){errorBox.textContent=ex.message;}finally{button.disabled=false;}});
   const magicForm=document.querySelector('#magic-form'); if(magicForm) magicForm.addEventListener('submit',async e=>{e.preventDefault();const status=document.querySelector('#magic-status');const button=magicForm.querySelector('button');button.disabled=true;status.textContent='Enviando…';try{const result=await api('/auth/request-link',{method:'POST',body:JSON.stringify({email:document.querySelector('#institutional-email').value})});status.textContent=result.message;magicForm.querySelector('input').value='';}catch(ex){status.textContent=ex.message;}finally{button.disabled=false;}});
 }
 async function moderatorPage() {
@@ -858,7 +878,7 @@ function surveysPanel() {
       <div class="code-columns"><div class="field"><label for="sv-moment">Momento</label><select id="sv-moment" class="select"><option value="entrada">Entrada</option><option value="salida">Salida</option><option value="cierre">Cierre</option></select></div>
       <div class="field"><label for="sv-hours">Abierta durante (horas)</label><input id="sv-hours" type="number" min="1" max="720" value="72"></div></div>
       <div class="field"><label for="sv-title">Título</label><input id="sv-title" maxlength="120" placeholder="KPSI de entrada · Fase 1"></div>
-      <details class="code-panel"><summary>Enunciados (plantilla editable)</summary><p class="helper">Una línea por enunciado; las líneas que empiezan con # agrupan por dimensión. Para comparar entrada y salida, usa los mismos enunciados.<span id="sv-note"></span></p><textarea id="sv-items" rows="10">${esc(projectConfig[first]?.survey_templates?.kpsi||'')}</textarea></details>
+      <details class="code-panel"><summary>Enunciados (plantilla editable)</summary><p class="helper">Una línea por enunciado; las líneas que empiezan con # agrupan por dimensión. Para comparar entrada y salida, usa los mismos enunciados.<span id="sv-note"></span></p><textarea id="sv-items" aria-label="Enunciados de la encuesta, uno por línea" rows="10">${esc(projectConfig[first]?.survey_templates?.kpsi||'')}</textarea></details>
       <div class="error-text" id="sv-error" role="alert"></div><button class="button" type="submit">Crear encuesta y mostrar QR</button></form>
     <div id="survey-list" class="material-list"></div></section>`;
 }
@@ -1092,7 +1112,7 @@ async function render() {
   const kit=path.match(/^\/kit(?:\/(incentiva|innova))?$/);
   if(kit) return kitPage(kit[1]||'incentiva');
   const ticket=path.match(/^\/(tiquete|encuesta)\/([A-Za-z0-9-]{4,12})$/), ficha=path.match(/^\/ficha\/(\d+)$/);
-  if(!user){ if(ticket){try{sessionStorage.setItem('afterLogin',path);}catch{}} return login(); }
+  if(!user){ if(ticket||/^\/(incentiva|innova)\/recurso\/[^/]+$/.test(path)){try{sessionStorage.setItem('afterLogin',path+location.hash);}catch{}} return login(); }
   if(ticket) return ticket[1]==='tiquete'?ticketPage(ticket[2]):surveyPage(ticket[2]);
   if(ficha) return fichaPage(Number(ficha[1]));
   const managerPage=path.match(/^\/(informe|proyeccion)\/(incentiva|innova)$/);
@@ -1117,7 +1137,7 @@ async function bootstrap() {
   if(user){
     try{const next=sessionStorage.getItem('afterLogin');if(next){sessionStorage.removeItem('afterLogin');if(currentPath()==='/'&&next.startsWith('/')&&!next.startsWith('//'))history.replaceState({},'',next);}}catch{}
     const invite=new URLSearchParams(location.search).get('unirse');
-    if(invite){history.replaceState({},'','/');try{await api('/api/join',{method:'POST',body:JSON.stringify({code:invite})});const state=await api('/api/me');activeProjects=state.active_projects||[];pendingProjects=state.pending_projects||[];mySections=state.my_sections||{};notify('Listo: ya tienes acceso a la asignatura.');}catch(ex){notify(ex.message);}}
+    if(invite){history.replaceState({},'','/');try{const joined=await api('/api/join',{method:'POST',body:JSON.stringify({code:invite})});if(joined.project_id)history.replaceState({},'',`/${joined.project_id}`);const state=await api('/api/me');activeProjects=state.active_projects||[];pendingProjects=state.pending_projects||[];mySections=state.my_sections||{};notify('Listo: ya tienes acceso a la asignatura.');}catch(ex){notify(ex.message);}}
   }
   render();
 }
