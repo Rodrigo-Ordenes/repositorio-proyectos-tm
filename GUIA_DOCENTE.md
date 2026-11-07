@@ -16,6 +16,9 @@ Todo se hace desde **Revisión** (arriba a la derecha) → panel docente. Arriba
 
 - **Avisos:** el número junto a «Revisión» indica cuánto espera tu revisión. Si el sitio tiene correo configurado, recibes como máximo un aviso por hora. Puedes desactivarlo arriba del panel, y con «Enviar correo de prueba a mi dirección» compruebas que te llega.
 
+- **Pegar varias preguntas a la vez:** al crear un tiquete de salida o de preguntas previas, abre «Pegar varias preguntas a la vez» y pega el texto (una pregunta por línea, hasta 5). Sirve copiarlo desde Word o un correo: la numeración y las viñetas se quitan solas.
+- **KPSI de Innova:** la plantilla del panel trae los 17 enunciados del instrumento del curso (conceptual, procedimental y actitudinal, escala 1 a 4). Crea una encuesta KPSI de «entrada» y otra de «salida» con los mismos enunciados para que el informe compare los porcentajes por nivel.
+
 ## En cada sesión
 
 - **Tiquete de salida:** en «Tiquetes de salida», escribe el nombre de la sesión y pulsa «Crear tiquete y mostrar QR». El curso responde las 3 preguntas estándar en unos 5 minutos. La respuesta no lleva el nombre; la participación se registra aparte para limitar duplicados.
