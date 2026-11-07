@@ -485,3 +485,7 @@ h2 { font-size: clamp(1.35rem, 2.5vw, 2rem); line-height: 1.16; }
 .lv5-3 { background: var(--level5-3); }
 .lv5-4 { background: var(--level5-4); }
 .lv5-5 { background: var(--level5-5); }
+.video-steps { display: grid; gap: .6rem; margin: 1rem 0 1.2rem; padding-left: 1.4rem; }
+.video-steps li { padding-left: .2rem; }
+.more-tools { margin: 1.2rem 0; padding-top: .8rem; border-top: 1px solid var(--line); }
+.more-tools > summary { cursor: pointer; font-weight: 600; padding: .4rem 0; }
