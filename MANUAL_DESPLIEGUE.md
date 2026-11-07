@@ -99,6 +99,15 @@ Hosting confirmado: plan «Emprendedores – Crecimiento» de V2 Networks, con c
 2. Si la docente no está en `PUCV_*_ADMINS`, agrégala en **Panel docente → Equipo docente** (correo y asignatura). El cambio rige de inmediato, sin reiniciar.
 3. En **Códigos personales de ingreso** pega su correo y genera su código. Entrégaselo en privado. Cuando Google esté activo, podrá entrar con el botón y el código ya no hará falta.
 
+### Profesora a cargo (alejandra.sandoval@pucv.cl): dos niveles posibles
+
+| Nivel | Cómo | Qué puede hacer | Qué ve además |
+|---|---|---|---|
+| **Administración global** (recomendado desde el primer día) | Su correo en `PUCV_ADMIN_EMAILS`, junto al del administrador del sitio | Todo: equipo docente de ambas asignaturas, códigos del curso y personales, revisión, informes, cohortes | Auditoría, respaldos completos, gestión de datos personales y cierre de cohorte |
+| **Docente de asignatura** | Su correo en `PUCV_INCENTIVA_ADMINS` / `PUCV_INNOVA_ADMINS`, o agregada en «Equipo docente» | En sus asignaturas: códigos, revisión, tiquetes, encuestas, informe y **agregar o retirar codocentes** | Nada de las herramientas globales |
+
+Una docente no puede retirarse a sí misma si es la última de su asignatura (la administración global sí puede corregir una asignación equivocada). Cada incorporación y retiro queda en la auditoría.
+
 ## 4. Dar acceso a estudiantes
 
 La forma principal es **un código por curso o por fase**, sin Google ni códigos individuales:

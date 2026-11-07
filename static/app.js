@@ -560,7 +560,7 @@ async function moderatorPage() {
     <div id="moderation-content" class="loading">Cargando pendientes…</div>
     <section class="detail-panel resource-detail"><div class="section-head"><h2>Coevaluación entre pares</h2><a class="button secondary small" href="/api/admin/peer-reviews.csv" download>Descargar todo (CSV) ↧</a></div><p class="helper">Promedios por ficha (1 a 4) con la rúbrica de cada asignatura. El CSV incluye quién evaluó, para revisar la calidad de los comentarios.</p><div id="peer-summary" class="helper">Cargando…</div></section>
     <section class="detail-panel resource-detail"><div class="section-head"><h2>Integrantes con acceso</h2><span class="pill" id="members-count"></span></div><div id="members-list" class="helper">Cargando…</div></section>
-    ${user.role==='admin'?staffPanel()+auditPanel()+privacyPanel():''}
+    ${managedProjects.length?staffPanel():''}${user.role==='admin'?auditPanel()+privacyPanel():''}
     ${user.role==='admin'?`<section class="detail-panel resource-detail"><h2>Respaldos</h2><div id="backup-reminder" role="status"></div><div id="backup-info" class="helper">Cargando…</div><a class="button secondary small" href="/api/admin/backup" download>Descargar respaldo completo (.zip) ↧</a><p class="helper">Incluye la base de datos y todos los archivos subidos. Descárgalo una vez por semana y guárdalo fuera del hosting, por ejemplo en la unidad compartida del proyecto.</p></section>`:''}`;
   // Keep a long working panel navigable without presenting every tool as a competing action.
   const toc=document.createElement('nav'); toc.className='admin-toc'; toc.setAttribute('aria-label','Secciones del panel');
@@ -579,7 +579,8 @@ async function moderatorPage() {
   loadPeerSummary();
   bindSurveys();
   loadCohorts().then(()=>{bindIndicators();bindTracking();bindReportLinks();});
-  if(user.role==='admin'){bindStaff();bindPrivacy();loadAudit();}
+  if(managedProjects.length) bindStaff();
+  if(user.role==='admin'){bindPrivacy();loadAudit();}
   if(user.role==='admin'){loadBackups();document.querySelector('a[href="/api/admin/backup"]')?.addEventListener('click',()=>setTimeout(loadBackups,4000));}
   const uploadForm=document.querySelector('#resource-upload-form');
   uploadForm.addEventListener('submit',async event=>{event.preventDefault();const button=uploadForm.querySelector('button');const error=document.querySelector('#resource-upload-error');const file=document.querySelector('#r-file').files[0], content=document.querySelector('#r-content').value;if(!file&&!content.trim()){error.textContent='Escribe el texto del material o adjunta un archivo.';return;}if(file&&file.size>8*1024*1024){error.textContent='El archivo debe pesar como máximo 8 MB.';return;}button.disabled=true;error.textContent='Guardando…';try{const result=await api('/api/admin/resources',{method:'POST',body:JSON.stringify({project_id:document.querySelector('#r-project').value,title:document.querySelector('#r-title').value,category:document.querySelector('#r-category').value,summary:document.querySelector('#r-summary').value,tags:document.querySelector('#r-tags').value,content,status:document.querySelector('#r-draft').checked?'draft':'published',filename:file?.name||'',file_base64:file?await fileToBase64(file):''})});notify(result.message);uploadForm.reset();error.textContent='';resourceCache={};loadMaterials();}catch(ex){error.textContent=ex.message;}finally{button.disabled=false;}});
@@ -921,8 +922,8 @@ function bindIndicators() {
   select.addEventListener('change',load); cohort.addEventListener('change',load); load();
 }
 function staffPanel() {
-  return `<section class="detail-panel resource-detail"><h2>Equipo docente</h2><p class="helper">Asigna quién revisa cada asignatura sin tocar la configuración del servidor. El cambio rige de inmediato.</p>
-    <form id="staff-form" class="join-row"><label class="visually-hidden" for="st-email">Correo</label><input id="st-email" type="email" required placeholder="nombre@pucv.cl"><label class="visually-hidden" for="st-project">Asignatura</label><select id="st-project" class="select">${Object.keys(PROJECTS).map(id=>`<option value="${id}">${esc(PROJECTS[id].name)}</option>`).join('')}</select><button class="button small" type="submit">Asignar</button></form>
+  return `<section class="detail-panel resource-detail"><h2>Equipo docente</h2><p class="helper">${user.role==='admin'?'Asigna quién revisa cada asignatura sin tocar la configuración del servidor.':'Agrega o retira codocentes de tus asignaturas.'} El cambio rige de inmediato. Si eres la última docente de una asignatura, no puedes retirarte.</p>
+    <form id="staff-form" class="join-row"><label class="visually-hidden" for="st-email">Correo</label><input id="st-email" type="email" required placeholder="nombre@pucv.cl"><label class="visually-hidden" for="st-project">Asignatura</label><select id="st-project" class="select">${managedProjects.map(id=>`<option value="${id}">${esc(PROJECTS[id].name)}</option>`).join('')}</select><button class="button small" type="submit">Asignar</button></form>
     <div id="staff-list" class="helper">Cargando…</div></section>`;
 }
 function auditPanel() {
