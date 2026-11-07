@@ -39,6 +39,7 @@
 - Create: `pruebas/trazabilidad_ingresos.sh` — prueba de ingreso, consulta, controles de acceso y retención.
 - Modify: `pruebas/ejecutar.sh` — sumar la suite nueva al recorrido completo.
 - Modify: `GUIA_DOCENTE.md` — explicar dónde se consultan los ingresos.
+- Modify: `README.md` — evitar un total fijo y desactualizable de verificaciones.
 - Modify: `.gitignore` — proteger los nombres de archivo del código SOS indicado en el encargo.
 
 **Interfaces:**

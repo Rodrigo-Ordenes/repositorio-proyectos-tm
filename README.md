@@ -84,7 +84,7 @@ Las invitaciones de curso se crean desde «Acceso de estudiantes» en el panel d
 ### Pruebas automáticas
 
 ```sh
-bash pruebas/ejecutar.sh            # todas las suites (225 verificaciones)
+bash pruebas/ejecutar.sh            # todas las suites
 bash pruebas/ejecutar.sh seguridad  # una sola suite
 ```
 
