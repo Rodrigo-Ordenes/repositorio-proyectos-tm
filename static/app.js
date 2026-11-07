@@ -541,7 +541,7 @@ async function moderatorPage() {
     <section class="detail-panel resource-detail"><div class="section-head"><h2>Coevaluación entre pares</h2><a class="button secondary small" href="/api/admin/peer-reviews.csv" download>Descargar todo (CSV) ↧</a></div><p class="helper">Promedios por ficha (1 a 4) con la rúbrica de cada asignatura. El CSV incluye quién evaluó, para revisar la calidad de los comentarios.</p><div id="peer-summary" class="helper">Cargando…</div></section>
     <section class="detail-panel resource-detail"><div class="section-head"><h2>Integrantes con acceso</h2><span class="pill" id="members-count"></span></div><div id="members-list" class="helper">Cargando…</div></section>
     ${user.role==='admin'?staffPanel()+auditPanel()+privacyPanel():''}
-    ${user.role==='admin'?`<section class="detail-panel resource-detail"><h2>Respaldos</h2><div id="backup-info" class="helper">Cargando…</div><a class="button secondary small" href="/api/admin/backup" download>Descargar respaldo completo (.zip) ↧</a><p class="helper">Incluye la base de datos y todos los archivos subidos. Descárgalo una vez por semana y guárdalo fuera del hosting, por ejemplo en la unidad compartida del proyecto.</p></section>`:''}`;
+    ${user.role==='admin'?`<section class="detail-panel resource-detail"><h2>Respaldos</h2><div id="backup-reminder" role="status"></div><div id="backup-info" class="helper">Cargando…</div><a class="button secondary small" href="/api/admin/backup" download>Descargar respaldo completo (.zip) ↧</a><p class="helper">Incluye la base de datos y todos los archivos subidos. Descárgalo una vez por semana y guárdalo fuera del hosting, por ejemplo en la unidad compartida del proyecto.</p></section>`:''}`;
   // Keep a long working panel navigable without presenting every tool as a competing action.
   const toc=document.createElement('nav'); toc.className='admin-toc'; toc.setAttribute('aria-label','Secciones del panel');
   const headings=[...main.querySelectorAll(':scope > section > h2, :scope > section > .section-head > h2')];
@@ -549,6 +549,7 @@ async function moderatorPage() {
   toc.innerHTML=`<label for="admin-jump">Ir directamente a</label><select id="admin-jump" class="select"><option value="" selected>Elige una tarea del panel</option><optgroup label="Preparar la asignatura">${options(0,5)}</optgroup><optgroup label="Seguimiento del curso">${options(5,11)}<option value="moderation">Revisión pendiente</option></optgroup>${user.role==='admin'?`<optgroup label="Administración del sitio">${options(11,headings.length)}</optgroup>`:''}</select><button class="button secondary small" type="button" id="admin-jump-go">Ir</button>`;
   toc.addEventListener('click',e=>{if(e.target.id!=='admin-jump-go')return;const value=document.querySelector('#admin-jump').value;if(value==='')return;const target=value==='moderation'?document.querySelector('#moderation-content'):headings[Number(value)];target.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});});
   main.querySelector('.lead').after(toc);
+  if(user.role==='admin'){const banner=document.createElement('div');banner.id='backup-banner';toc.after(banner);}
   bindAccessCodes();
   bindMembers();
   loadMembers();
@@ -559,7 +560,7 @@ async function moderatorPage() {
   bindSurveys();
   loadCohorts().then(()=>{bindIndicators();bindTracking();bindReportLinks();});
   if(user.role==='admin'){bindStaff();bindPrivacy();loadAudit();}
-  if(user.role==='admin') loadBackups();
+  if(user.role==='admin'){loadBackups();document.querySelector('a[href="/api/admin/backup"]')?.addEventListener('click',()=>setTimeout(loadBackups,4000));}
   const uploadForm=document.querySelector('#resource-upload-form');
   uploadForm.addEventListener('submit',async event=>{event.preventDefault();const button=uploadForm.querySelector('button');const error=document.querySelector('#resource-upload-error');const file=document.querySelector('#r-file').files[0], content=document.querySelector('#r-content').value;if(!file&&!content.trim()){error.textContent='Escribe el texto del material o adjunta un archivo.';return;}if(file&&file.size>8*1024*1024){error.textContent='El archivo debe pesar como máximo 8 MB.';return;}button.disabled=true;error.textContent='Guardando…';try{const result=await api('/api/admin/resources',{method:'POST',body:JSON.stringify({project_id:document.querySelector('#r-project').value,title:document.querySelector('#r-title').value,category:document.querySelector('#r-category').value,summary:document.querySelector('#r-summary').value,tags:document.querySelector('#r-tags').value,content,status:document.querySelector('#r-draft').checked?'draft':'published',filename:file?.name||'',file_base64:file?await fileToBase64(file):''})});notify(result.message);uploadForm.reset();error.textContent='';resourceCache={};loadMaterials();}catch(ex){error.textContent=ex.message;}finally{button.disabled=false;}});
   try {
@@ -888,7 +889,7 @@ function auditPanel() {
 }
 async function loadAudit(offset=0) {
   const box=document.querySelector('#admin-audit-list'); if(!box)return;
-  const labels={sos_login:'Ingreso con código SOS',course_code_login:'Ingreso con código del curso',course_code_created:'Creación de código del curso',course_code_disabled:'Desactivación de código del curso',staff_added:'Incorporación al equipo docente',staff_removed:'Retiro del equipo docente',membership_revoked:'Retiro de acceso',person_anonymized:'Anonimización de persona',cohort_anonymized:'Anonimización de cohorte'};
+  const labels={sos_login:'Ingreso con código SOS',full_backup_downloaded:'Descarga del respaldo completo',course_code_login:'Ingreso con código del curso',course_code_created:'Creación de código del curso',course_code_disabled:'Desactivación de código del curso',staff_added:'Incorporación al equipo docente',staff_removed:'Retiro del equipo docente',membership_revoked:'Retiro de acceso',person_anonymized:'Anonimización de persona',cohort_anonymized:'Anonimización de cohorte'};
   const entityNames={join_code:'Código',staff_role:'Rol docente',membership:'Acceso',user:'Cuenta',cohort:'Cohorte',sos:'Ingreso SOS'};
   const rowMarkup=r=>`<tr><td>${new Date(r.created_at*1000).toLocaleString('es-CL')}</td><td>${esc(labels[r.event_type]||r.event_type)}</td><td>${esc(r.actor_email||'—')}</td><td>${esc(r.subject_email||'—')}</td><td>${esc(PROJECTS[r.project_id]?.name||'—')}</td><td>${esc(entityNames[r.entity_type]||'—')}${r.entity_id?` #${Number(r.entity_id)}`:''}</td><td>${r.ip_hash?`<code title="Huella HMAC de IP con sal">${esc(r.ip_hash.slice(0,16))}…</code>`:'—'}</td></tr>`;
   try{const rows=await api(`/api/admin/audit?offset=${offset}`);
@@ -946,6 +947,12 @@ async function loadPeerSummary() {
 async function loadBackups() {
   const box=document.querySelector('#backup-info'); if(!box)return;
   try{const info=await api('/api/admin/backups'), last=info.backups[0];
+    const reminder=document.querySelector('#backup-reminder'), d=info.days_since_download, when=info.last_download?new Date(info.last_download.at*1000).toLocaleDateString('es-CL'):'';
+    const banner=document.querySelector('#backup-banner');
+    if(banner) banner.innerHTML=info.download_overdue?`<div class="notice warning">Respaldo pendiente: ${info.last_download?`el último respaldo completo se descargó hace ${d} días`:'aún no se ha descargado ningún respaldo completo'}. <a href="#backup-reminder">Ir a Respaldos</a></div>`:'';
+    if(reminder) reminder.innerHTML=info.download_overdue
+      ?`<div class="notice warning">${info.last_download?`El último respaldo completo se descargó hace ${d} días (${esc(when)}, ${esc(info.last_download.by)}).`:'Aún no se ha descargado ningún respaldo completo.'} Descarga uno y guárdalo fuera del hosting: las copias automáticas quedan en el mismo disco.</div>`
+      :`<p class="helper">Último respaldo completo descargado: ${d===0?'hoy':`hace ${d} ${d===1?'día':'días'}`} (${esc(when)}, ${esc(info.last_download.by)}).</p>`;
     box.innerHTML=info.enabled?`Copia automática de la base cada ${info.every_hours} h (se guardan las últimas ${info.keep}). ${last?`Última: ${new Date(last.created_at*1000).toLocaleString('es-CL')} · ${(last.size/1024).toFixed(0)} KB.`:'Aún no se genera la primera.'}`:'Las copias automáticas están desactivadas (APP_BACKUP_HOURS=0).';
   }catch(ex){box.textContent=ex.message;}
 }
