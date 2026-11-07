@@ -9,7 +9,7 @@ Por si falla Google, el correo o un código durante una clase o una grabación. 
 ## Funciones para la docente y los equipos
 
 - **Ficha de evidencia automática:** cada entrega genera su Ficha de Evidencia (Incentiva) o matriz diagnóstica (Innova) en `/ficha/<id>`, lista para imprimir o guardar en PDF. Subir la plantilla Word pasa a ser opcional.
-- **Comparación de alternativas (Incentiva):** hasta 3 ideas puntuadas de 1 a 3 en los 7 criterios de la postulación, con la elegida marcada; aparece en la ficha y en la revisión.
+- **Comparación de alternativas (Incentiva):** hasta 3 ideas con un porcentaje (0 a 100 %) en cada uno de los 7 criterios de la postulación y su promedio, con la elegida marcada; aparece en la ficha y en la revisión.
 - **Modelo 3D (Innova):** el equipo sube un STL y la ficha lo muestra en un visor que se gira con el mouse o las flechas.
 - **Preguntas previas:** además del tiquete de salida, preguntas antes de la sesión (aula invertida). La docente categoriza cada respuesta y el panel calcula la duda dominante y las palabras frecuentes; el CSV incluye las categorías.
 - **Seguimiento por equipo:** por paralelo, quién está ligado a una entrega, el estado de cada equipo y quién falta.

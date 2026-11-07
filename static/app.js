@@ -280,6 +280,8 @@ function showDelivery(projectId) {
     if(saved&&Object.values(saved).some(v=>v)){draftFields().forEach(el=>{if(saved[el.name])el.value=saved[el.name];});
       draftForm.insertAdjacentHTML('afterbegin','<div class="notice" id="draft-notice" role="status">Recuperamos lo que tu equipo había escrito en este dispositivo (los archivos hay que elegirlos de nuevo). <button class="text-button" type="button" id="draft-discard">Descartar borrador</button></div>');
       document.querySelector('#draft-discard').addEventListener('click',()=>{try{localStorage.removeItem(draftKey);}catch{}draftForm.reset();document.querySelector('#draft-notice')?.remove();});}}catch{}
+  if(config.alternative_criteria?.length){updateAlternativeAverages(draftForm,config.alternative_criteria);
+    draftForm.addEventListener('change',e=>{if(e.target.matches('.score-select'))updateAlternativeAverages(draftForm,config.alternative_criteria);});}
   let draftTimer=null;
   draftForm.addEventListener('input',()=>{clearTimeout(draftTimer);draftTimer=setTimeout(()=>{try{localStorage.setItem(draftKey,JSON.stringify(Object.fromEntries(draftFields().map(el=>[el.name,el.value]))));}catch{}},400);});
   document.querySelector('#submission-form').addEventListener('submit',async event=>{
@@ -301,26 +303,36 @@ function showDelivery(projectId) {
   loadMySubmissions(projectId);
 }
 function alternativesFieldset(criteria) {
-  const select=(alt,i)=>`<select class="select score-select" name="alt${alt}_c${i}" aria-label="Alternativa ${alt+1}: ${esc(criteria[i])}"><option value="">–</option><option>1</option><option>2</option><option>3</option></select>`;
-  return `<fieldset class="field-group"><legend>Comparación de alternativas (recomendada)</legend><p class="helper">Antes de elegir, la postulación pide comparar al menos dos ideas. Puntúen cada criterio de 1 (bajo) a 3 (alto) y marquen la elegida. Aparece en la ficha de evidencia.</p>
+  const levels=[0,10,20,30,40,50,60,70,80,90,100];
+  const select=(alt,i)=>`<select class="select score-select" name="alt${alt}_c${i}" aria-label="Alternativa ${alt+1}: ${esc(criteria[i])}, porcentaje"><option value="">–</option>${levels.map(v=>`<option value="${v}">${v} %</option>`).join('')}</select>`;
+  return `<fieldset class="field-group"><legend>Comparación de alternativas (recomendada)</legend><p class="helper">Antes de elegir, la postulación pide comparar al menos dos ideas. Puntúen cada criterio de 0 a 100 % según cuánto lo cumple cada idea, y marquen la elegida. Aparece en la ficha de evidencia.</p>
     <div class="table-scroll"><table class="code-table alternatives-table"><thead><tr><th>Criterio</th>${[0,1,2].map(a=>`<th><label class="visually-hidden" for="alt${a}-name">Nombre de la alternativa ${a+1}</label><input id="alt${a}-name" name="alt${a}_name" maxlength="160" placeholder="Alternativa ${String.fromCharCode(65+a)}"></th>`).join('')}</tr></thead>
     <tbody>${criteria.map((c,i)=>`<tr><td>${esc(c)}</td>${[0,1,2].map(a=>`<td>${select(a,i)}</td>`).join('')}</tr>`).join('')}
+    <tr><td><b>Promedio</b></td>${[0,1,2].map(a=>`<td><output id="alt${a}-average" for="${criteria.map((_,i)=>`alt${a}_c${i}`).join(' ')}">—</output></td>`).join('')}</tr>
     <tr><td><b>Elegida</b></td>${[0,1,2].map(a=>`<td><label><input type="radio" name="alt_chosen" value="${a}"${a===0?' checked':''}> Esta</label></td>`).join('')}</tr></tbody></table></div></fieldset>`;
 }
 function readAlternatives(form, criteria) {
   if(!criteria.length) return null;
   const items=[]; let chosen=0;
   [0,1,2].forEach(a=>{const name=(form.elements[`alt${a}_name`]?.value||'').trim(); if(!name) return;
-    const scores=criteria.map((_,i)=>Number(form.elements[`alt${a}_c${i}`].value)||0);
-    if(scores.some(v=>!v)) throw new Error(`Puntúa todos los criterios de «${name}» o borra su nombre.`);
+    const raw=criteria.map((_,i)=>form.elements[`alt${a}_c${i}`].value);
+    if(raw.some(v=>v==='')) throw new Error(`Puntúa todos los criterios de «${name}» o borra su nombre.`);
     if(form.elements.alt_chosen.value===String(a)) chosen=items.length;
-    items.push({name,scores});});
+    items.push({name,scores:raw.map(Number)});});
   return items.length?{items,chosen}:null;
 }
+function updateAlternativeAverages(form, criteria) {
+  [0,1,2].forEach(a=>{const out=form.querySelector(`#alt${a}-average`); if(!out) return;
+    const raw=criteria.map((_,i)=>form.elements[`alt${a}_c${i}`]?.value??''), done=raw.filter(v=>v!=='').map(Number), missing=raw.length-done.length;
+    out.textContent=!done.length?'—':`${Math.round(done.reduce((x,y)=>x+y,0)/done.length)} %${missing?` (faltan ${missing})`:''}`;});
+}
+// Comparisons saved before the percentage scale used 1–3 per criterion and a sum; they are still shown as they were.
+function alternativeCell(alt, value) { return alt.scale!=='percent'?`${value}`:`${value} %`; }
 function alternativesTable(alt) {
   if(!alt?.items?.length) return '';
-  return `<div class="table-scroll"><table class="code-table alternatives-table"><thead><tr><th>Criterio (1 a 3)</th>${alt.items.map((it,i)=>`<th>${esc(it.name)}${i===alt.chosen?' <span class="status-label">✓ elegida</span>':''}</th>`).join('')}</tr></thead>
-    <tbody>${alt.criteria.map((c,ci)=>`<tr><td>${esc(c)}</td>${alt.items.map(it=>`<td>${it.scores[ci]}</td>`).join('')}</tr>`).join('')}<tr><td><b>Total</b></td>${alt.items.map(it=>`<td><b>${it.total}</b></td>`).join('')}</tr></tbody></table></div>`;
+  const percent=alt.scale==='percent';
+  return `<div class="table-scroll"><table class="code-table alternatives-table"><thead><tr><th>Criterio ${percent?'(0 a 100 %)':'(1 a 3)'}</th>${alt.items.map((it,i)=>`<th>${esc(it.name)}${i===alt.chosen?' <span class="status-label">✓ elegida</span>':''}</th>`).join('')}</tr></thead>
+    <tbody>${alt.criteria.map((c,ci)=>`<tr><td>${esc(c)}</td>${alt.items.map(it=>`<td>${alternativeCell(alt,it.scores[ci])}</td>`).join('')}</tr>`).join('')}<tr><td><b>${percent?'Promedio':'Total'}</b></td>${alt.items.map(it=>`<td><b>${percent?`${it.average} %`:it.total}</b></td>`).join('')}</tr></tbody></table></div>`;
 }
 // Minimal STL viewer on a 2D canvas: flat-shaded triangles, painter's algorithm, drag or arrow keys to rotate.
 async function mountStlViewer(canvas, url) {

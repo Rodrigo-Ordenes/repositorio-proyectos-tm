@@ -26,12 +26,18 @@ check "la cohorte actual se informa en /api/me" "$(req ana $B/api/me)" '"cohort"
 
 base='"project_id":"incentiva","section":"Bioanálisis","summary":"S","video_url":"https://youtu.be/dQw4w9WgXcQ","video_length_confirmed":true,"consent_confirmed":true,"project_fields":{"challenge":"Seguimiento","research_question":"¿P?","evidence":"a; b; c","community":"C","solution":"So","indicator":"I","limitations":"L"}'
 # Alternatives
-check "alternativa con puntaje fuera de rango" "$(req ana -d "{$base,\"team_name\":\"E1\",\"title\":\"T\",\"members\":\"Ana\",\"alternatives\":{\"items\":[{\"name\":\"A\",\"scores\":[1,2,3,4,1,1,1]}]}}" $B/api/submissions)" "Puntúa de 1 a 3.*\[400\]"
-check "entrega sin ficha adjunta (se genera)" "$(req ana -d "{$base,\"team_name\":\"E1\",\"title\":\"Con alternativas\",\"members\":\"Ana\nLuis luis@mail.pucv.cl\",\"alternatives\":{\"items\":[{\"name\":\"A\",\"scores\":[3,3,3,3,3,3,3]},{\"name\":\"B\",\"scores\":[1,2,1,2,1,2,1]}],\"chosen\":0}}" $B/api/submissions)" '"id": .*ficha de evidencia generada.*\[201\]'
+check "alternativa con porcentaje fuera de rango" "$(req ana -d "{$base,\"team_name\":\"E1\",\"title\":\"T\",\"members\":\"Ana\",\"alternatives\":{\"items\":[{\"name\":\"A\",\"scores\":[10,20,30,140,10,10,10]}]}}" $B/api/submissions)" "de 0 a 100 %.*\[400\]"
+check "entrega sin ficha adjunta (se genera)" "$(req ana -d "{$base,\"team_name\":\"E1\",\"title\":\"Con alternativas\",\"members\":\"Ana\nLuis luis@mail.pucv.cl\",\"alternatives\":{\"items\":[{\"name\":\"A\",\"scores\":[100,90,80,100,90,80,100]},{\"name\":\"B\",\"scores\":[10,20,10,20,10,20,10]}],\"chosen\":0}}" $B/api/submissions)" '"id": .*ficha de evidencia generada.*\[201\]'
 SID=$(req ana "$B/api/my-submissions?project=incentiva" | val "d[0]['id']")
 ficha=$(req ana $B/api/submissions/$SID/ficha)
 check "ficha generada con campos" "$ficha" '"label": "Pregunta de investigación", "value": "¿P?"'
-check "ficha con alternativas y totales" "$ficha" '"total": 21.*"total": 10.*"chosen": 0'
+check "ficha con porcentaje por criterio y promedio" "$ficha" '"scores": \[100, 90, 80, 100, 90, 80, 100\], "average": 91.*"average": 14.*"chosen": 0'
+check "las alternativas declaran su escala en porcentaje" "$ficha" '"scale": "percent"'
+js_alt=$(cat static/app.js)
+check "el formulario puntúa cada criterio de 0 a 100 %" "$js_alt" 'Puntúen cada criterio de 0 a 100 %'
+check "la tabla muestra el porcentaje de cada criterio" "$js_alt" 'alternativeCell('
+check "el formulario calcula el promedio mientras se puntúa" "$js_alt" "function updateAlternativeAverages("
+check "las comparaciones antiguas en 1–3 se siguen mostrando" "$js_alt" "alt.scale!=='percent'"
 check "integrante por correo ve la ficha" "$(req luis $B/api/submissions/$SID/ficha)" "\[200\]"
 check "otro estudiante no la ve antes de publicar" "$(req bea $B/api/submissions/$SID/ficha)" "\[403\]"
 check "otra asignatura no la ve" "$(req cata $B/api/submissions/$SID/ficha)" "\[403\]"
