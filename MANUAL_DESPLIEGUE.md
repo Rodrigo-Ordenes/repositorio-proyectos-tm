@@ -153,6 +153,13 @@ Lo más simple es una cuenta Gmail del equipo con verificación en dos pasos y u
 
 Con eso se activan el enlace de ingreso por correo y los avisos de acceso aprobado y de entrega publicada o devuelta.
 
+### Avisos a las docentes
+
+- **Siempre, sin configurar nada:** el botón «Revisión» de la cabecera muestra cuántas entregas, solicitudes de acceso y comentarios esperan revisión en las asignaturas de cada docente. Se actualiza cada 2 minutos. Arriba del panel hay un resumen con «Ir a revisar».
+- **Por correo (con SMTP configurado):** cuando llega una entrega o una solicitud de acceso, las docentes de la asignatura (y la administración global) reciben un correo con el conteo y el enlace al panel, como máximo uno por hora por persona. Sin nombres ni contenido de estudiantes. Lo que llegue dentro de esa hora va en el siguiente resumen, que envía `server.py mantenimiento` (cron). Cada docente puede desactivarlos en el panel.
+- **Comprobarlo:** `python3 server.py diagnostico` intenta conectarse al servidor de correo sin enviar nada, y en el panel cada docente tiene «Enviar correo de prueba a mi dirección» (3 por hora, queda en la auditoría). Si no llega, revisa la carpeta de spam.
+- En V2 Networks: crea la cuenta `avisos@` en «Cuentas de email» y copia servidor, puerto y seguridad desde «Connect Devices» a `config.env`.
+
 ## 7. Mantenerlo
 
 - **Respaldo fuera del sitio, una vez por semana:** en el panel, pulsa «respaldo completo (.zip)» y guárdalo en un lugar del equipo. El sitio hace copias automáticas, pero quedan en el mismo disco. El panel muestra quién descargó el último respaldo y cuándo; si pasan 7 días sin descarga, aparece un aviso arriba del panel. Cada descarga queda en la auditoría.

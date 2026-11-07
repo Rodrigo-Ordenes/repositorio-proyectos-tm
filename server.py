@@ -1096,6 +1096,7 @@ def audit_cleanup_loop():
     while True:
         try:
             with connect() as db: purge_audit_events(db)
+            notify_pending_digest()
         except Exception as error:
             print(f"No se pudo depurar el registro de auditoría: {error}", flush=True)
         time.sleep(3600)
@@ -1190,7 +1191,9 @@ def issue_access_codes(db, emails, project, created_by, days):
 
 
 def email_ready() -> bool:
-    return bool(SMTP_HOST and SMTP_FROM and BASE_URL.startswith("https://") and SMTP_SECURITY in ("ssl", "starttls"))
+    # Unencrypted SMTP only to this same machine (a local relay or the test suite's fake server).
+    secure = SMTP_SECURITY in ("ssl", "starttls") or (SMTP_SECURITY == "none" and SMTP_HOST in ("127.0.0.1", "localhost"))
+    return bool(SMTP_HOST and SMTP_FROM and BASE_URL.startswith("https://") and secure)
 
 
 def send_email(to, subject, body):
@@ -1203,9 +1206,24 @@ def send_email(to, subject, body):
             smtp.send_message(message)
     else:
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=12) as smtp:
-            smtp.ehlo(); smtp.starttls(context=ssl.create_default_context()); smtp.ehlo()
+            smtp.ehlo()
+            if SMTP_SECURITY == "starttls": smtp.starttls(context=ssl.create_default_context()); smtp.ehlo()
             if SMTP_USER: smtp.login(SMTP_USER, SMTP_PASSWORD)
             smtp.send_message(message)
+
+
+def smtp_check():
+    """Connect and authenticate without sending anything, for `diagnostico`."""
+    try:
+        smtp = (smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=12, context=ssl.create_default_context()) if SMTP_SECURITY == "ssl"
+                else smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=12))
+        with smtp:
+            smtp.ehlo()
+            if SMTP_SECURITY == "starttls": smtp.starttls(context=ssl.create_default_context()); smtp.ehlo()
+            if SMTP_USER: smtp.login(SMTP_USER, SMTP_PASSWORD)
+        return True, f"{SMTP_HOST}:{SMTP_PORT}"
+    except Exception as error:
+        return False, f"{type(error).__name__}: {error}"
 
 
 def notify_later(recipients, subject, body):
@@ -1217,6 +1235,65 @@ def notify_later(recipients, subject, body):
             try: send_email(to, subject, body)
             except Exception as error: print(f"Aviso por correo a {to} falló: {error}", file=sys.stderr, flush=True)
     threading.Thread(target=run, daemon=True).start()
+
+
+NOTICE_EVERY = 3600
+
+
+def project_teachers(db, project):
+    """Who is notified about a subject: its teachers (configured or assigned in the panel) and the global admins."""
+    assigned = {r["email"] for r in db.execute("SELECT email FROM staff_roles WHERE project_id=?", (project,))}
+    return sorted(PROJECT_ADMIN_EMAILS.get(project, set()) | assigned | ADMIN_EMAILS)
+
+
+def pending_counts(db, projects):
+    if not projects: return {"submissions": 0, "comments": 0, "access_requests": 0, "total": 0}
+    marks = ",".join("?" for _ in projects)
+    counts = {
+        "submissions": db.execute(f"SELECT COUNT(*) FROM submissions WHERE status='review' AND project_id IN ({marks})", projects).fetchone()[0],
+        "comments": db.execute(f"""SELECT COUNT(*) FROM comments c JOIN resources r ON r.id=c.resource_id
+                                   WHERE c.status='review' AND r.project_id IN ({marks})""", projects).fetchone()[0],
+        "access_requests": db.execute(f"SELECT COUNT(*) FROM project_memberships WHERE status='pending' AND project_id IN ({marks})", projects).fetchone()[0]}
+    return {**counts, "total": sum(counts.values())}
+
+
+def teacher_projects(db, email):
+    if email in ADMIN_EMAILS: return list(PROJECTS)
+    assigned = {r["project_id"] for r in db.execute("SELECT project_id FROM staff_roles WHERE email=?", (email,))}
+    return [p for p, emails in PROJECT_ADMIN_EMAILS.items() if email in emails or p in assigned]
+
+
+def notify_teachers(db, project, force=False):
+    """At most one e-mail per teacher per hour: only the pending count and the panel link, never students' data."""
+    if not email_ready(): return
+    now = int(time.time())
+    for email in project_teachers(db, project):
+        if db.execute("SELECT 1 FROM settings WHERE key=?", (f"notify_off:{email}",)).fetchone(): continue
+        last = db.execute("SELECT value FROM settings WHERE key=?", (f"notify_last:{email}",)).fetchone()
+        if last and now - int(last["value"]) < NOTICE_EVERY: continue
+        projects = teacher_projects(db, email)
+        counts = pending_counts(db, projects)
+        if not counts["total"]: continue
+        if not force and last:
+            # The hourly digest only writes when something arrived after the previous notice.
+            since = int(last["value"]); marks = ",".join("?" for _ in projects)
+            newer = db.execute(f"""SELECT 1 FROM submissions WHERE status='review' AND project_id IN ({marks}) AND created_at>datetime(?,'unixepoch')
+                                  UNION SELECT 1 FROM project_memberships WHERE status='pending' AND project_id IN ({marks}) AND requested_at>datetime(?,'unixepoch')""",
+                               (*projects, since, *projects, since)).fetchone()
+            if not newer: continue
+        db.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (f"notify_last:{email}", str(now)))
+        total = counts["total"]
+        body = (f"Hay {total} {'pendiente' if total == 1 else 'pendientes'} de revisión en el Repositorio de proyectos de Tecnología Médica:\n"
+                f"- Entregas: {counts['submissions']}\n- Solicitudes de acceso: {counts['access_requests']}\n- Comentarios: {counts['comments']}\n\n"
+                f"Revísalos en {BASE_URL}/admin\n\nRecibes como máximo un aviso por hora. Puedes desactivarlos en el panel docente.")
+        notify_later([email], f"Repositorio TM: {total} {'pendiente' if total == 1 else 'pendientes'} de revisión", body)
+
+
+def notify_pending_digest():
+    """Hourly (cron or background loop): tell teachers about what arrived since their last notice."""
+    if not email_ready(): return
+    with connect() as db:
+        for project in PROJECTS: notify_teachers(db, project)
 
 
 def google_ready() -> bool:
@@ -1800,6 +1877,15 @@ class App(BaseHTTPRequestHandler):
             if not file_path.is_file(): return self.json({"error":"El archivo ya no está disponible."},404)
             filename=urllib.parse.quote(row["file_filename"] or "material",safe="")
             return self.send_bytes(file_path.read_bytes(),"application/octet-stream",headers={"Content-Disposition":f"attachment; filename*=UTF-8''{filename}"})
+        if path == "/api/admin/pending-counts":
+            user = self.require_user()
+            if not user: return
+            managed = self.managed_projects(user)
+            if not managed: return self.json({"error": "No tienes permiso para moderar."}, 403)
+            with connect() as db:
+                counts = pending_counts(db, managed)
+                off = db.execute("SELECT 1 FROM settings WHERE key=?", (f"notify_off:{user['email'].lower()}",)).fetchone()
+            return self.json({**counts, "email_enabled": not off, "email_ready": self.email_transport_ready()})
         if path == "/api/admin/pending":
             user = self.require_user()
             if not user: return
@@ -2158,6 +2244,7 @@ class App(BaseHTTPRequestHandler):
                   status=CASE WHEN project_memberships.status='active' THEN 'active' ELSE 'pending' END,
                   requested_at=CASE WHEN project_memberships.status='active' THEN project_memberships.requested_at ELSE CURRENT_TIMESTAMP END,
                   reviewed_at=NULL,reviewed_by=NULL""",(user["id"],project,current_cohort(db)))
+                notify_teachers(db, project, force=True)
             return self.json({"ok":True,"message":"Solicitud enviada. La docente debe aprobar el acceso."},201)
         if path == "/api/comments":
             user = self.require_user()
@@ -2262,6 +2349,7 @@ class App(BaseHTTPRequestHandler):
                     for key in (upload_key, model_key):
                         if key: (UPLOAD_DIR/key).unlink(missing_ok=True)
                     return self.json({"error":"Este equipo ya registró una entrega final."},409)
+                notify_teachers(db, project, force=True)
             return self.json({"ok": True, "id": cur.lastrowid, "message": "Entrega recibida para revisión. Ya puedes descargar la ficha de evidencia generada."}, 201)
         if path == "/api/admin/tickets":
             user = self.require_user()
@@ -2390,6 +2478,33 @@ class App(BaseHTTPRequestHandler):
                   ON CONFLICT(resource_id,reviewer_id) DO UPDATE SET scores=excluded.scores,strength=excluded.strength,
                   suggestion=excluded.suggestion,updated_at=CURRENT_TIMESTAMP""", (resource["id"], user["id"], json.dumps(scores), strength, suggestion))
             return self.json({"ok": True, "message": "Coevaluación guardada. El equipo la verá sin tu nombre."})
+        if path == "/api/admin/notifications":
+            user = self.require_user()
+            if not user: return
+            if not self.managed_projects(user): return self.json({"error": "No tienes permiso para el panel docente."}, 403)
+            key = f"notify_off:{user['email'].lower()}"
+            with connect() as db:
+                if payload.get("enabled") is False: db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?, '1')", (key,))
+                else: db.execute("DELETE FROM settings WHERE key=?", (key,))
+            return self.json({"ok": True, "email_enabled": payload.get("enabled") is not False,
+                              "message": "Avisos por correo activados." if payload.get("enabled") is not False else "Avisos por correo desactivados."})
+        if path == "/api/admin/test-email":
+            user = self.require_user()
+            if not user: return
+            if not self.managed_projects(user): return self.json({"error": "No tienes permiso para el panel docente."}, 403)
+            if not email_ready(): return self.json({"error": "El correo saliente no está configurado (SMTP_* y una dirección https)."}, 503)
+            with connect() as db:
+                bucket = f"test-email:{user['id']}"
+                if is_rate_limited(db, bucket, 3, 3600): return self.json({"error": "Ya enviaste 3 correos de prueba en la última hora."}, 429)
+                record_rate_event(db, bucket)
+                record_audit_event(db, "test_email_sent", user["email"], user["email"], ip_hash=audit_ip_hash(db, self.client_ip()))
+            try:
+                send_email(user["email"], "Repositorio TM: correo de prueba",
+                           f"Si lees esto, los avisos del repositorio llegan a {user['email']}.\n\n{BASE_URL}/admin")
+            except Exception as error:
+                print(f"Correo de prueba a {user['email']} falló: {error}", file=sys.stderr, flush=True)
+                return self.json({"error": "El servidor de correo rechazó el envío. Revisa SMTP_* en la configuración."}, 502)
+            return self.json({"ok": True, "message": f"Correo de prueba enviado a {user['email']}. Revisa también la carpeta de spam."})
         if path == "/api/admin/staff":
             user = self.require_user()
             if not user: return
@@ -2839,6 +2954,7 @@ def cli_maintenance(args):
     init_db()
     with connect() as db: purge_audit_events(db)
     print("Auditoría depurada.")
+    notify_pending_digest()
     latest = max((p.stat().st_mtime for p in BACKUP_DIR.glob("respaldo-*.sqlite3")), default=0) if BACKUP_DIR.is_dir() else 0
     if BACKUP_HOURS > 0 and time.time() - latest >= BACKUP_HOURS * 3600:
         print(f"Respaldo de la base: {create_backup()}")
@@ -2915,6 +3031,9 @@ def cli_diagnose(args):
           "Configurar GOOGLE_CLIENT_ID/SECRET (recomendado). Mientras tanto, entregar códigos personales.", critical=False)
     check(google_ready(), "Ingreso con Google configurado", "Ver README → «Activar Google en 15 minutos».", critical=False)
     check(email_ready(), "Correo saliente configurado (enlaces y avisos)", "Opcional: SMTP_HOST, SMTP_FROM y credenciales.", critical=False)
+    if email_ready():
+        smtp_ok, smtp_detail = smtp_check()
+        check(smtp_ok, f"Conexión con el servidor de correo ({smtp_detail})", "Revisa SMTP_HOST, SMTP_PORT, SMTP_SECURITY, usuario y contraseña. Luego prueba «Enviar correo de prueba» en el panel.", critical=False)
     for label, path in (("Base de datos", DB_PATH.parent), ("Archivos subidos", UPLOAD_DIR), ("Respaldos", BACKUP_DIR)):
         try:
             path.mkdir(parents=True, exist_ok=True); probe = path / ".prueba-escritura"; probe.write_text("ok"); probe.unlink(); ok = True

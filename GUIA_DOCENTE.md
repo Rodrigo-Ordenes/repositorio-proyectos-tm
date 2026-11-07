@@ -14,6 +14,8 @@ Todo se hace desde **Revisión** (arriba a la derecha) → panel docente. Arriba
 
 - **Codocentes:** en «Equipo docente» agrega o retira a otras docentes de tus asignaturas. El cambio rige de inmediato. No puedes retirarte si eres la última docente de la asignatura.
 
+- **Avisos:** el número junto a «Revisión» indica cuánto espera tu revisión. Si el sitio tiene correo configurado, recibes como máximo un aviso por hora. Puedes desactivarlo arriba del panel, y con «Enviar correo de prueba a mi dirección» compruebas que te llega.
+
 ## En cada sesión
 
 - **Tiquete de salida:** en «Tiquetes de salida», escribe el nombre de la sesión y pulsa «Crear tiquete y mostrar QR». El curso responde las 3 preguntas estándar en unos 5 minutos. La respuesta no lleva el nombre; la participación se registra aparte para limitar duplicados.

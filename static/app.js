@@ -52,6 +52,20 @@ document.addEventListener('click',linkHandler);
 window.addEventListener('popstate',render);
 
 const THEMES={auto:'Tema: automático',light:'Tema: claro',dark:'Tema: oscuro'};
+// Pending reviews in the header for teachers: refreshed on load and every 2 minutes while the tab is visible.
+let pendingTimer=null;
+async function refreshPendingBadge() {
+  const link=document.querySelector('#review-link'); if(!link)return;
+  try{const c=await api('/api/admin/pending-counts'), n=c.total;
+    link.outerHTML=`<a class="text-button review-link" id="review-link" href="/admin" data-route="/admin"${n?` aria-label="Revisión, ${n} ${n===1?'pendiente':'pendientes'}"`:''}>Revisión${n?` <span class="review-badge" aria-hidden="true">${n}</span>`:''}</a>`;
+    document.dispatchEvent(new CustomEvent('pending-counts',{detail:c}));
+  }catch{}
+}
+function startPendingBadge() {
+  clearInterval(pendingTimer); refreshPendingBadge();
+  pendingTimer=setInterval(()=>{if(document.visibilityState==='visible')refreshPendingBadge();},120000);
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&document.querySelector('#review-link'))refreshPendingBadge();});
 function themeButton() {
   let theme='auto'; try{theme=localStorage.getItem('theme')||'auto';}catch{}
   return `<button class="text-button theme-toggle" type="button" data-theme-toggle aria-label="${THEMES[theme]}. Cambiar tema" title="${THEMES[theme]}"><span aria-hidden="true">${theme==='dark'?'☾':theme==='light'?'☀':'◐'}</span></button>`;
@@ -64,7 +78,8 @@ document.addEventListener('click',e=>{if(!e.target.closest('[data-theme-toggle]'
   header(); notify(THEMES[next]);});
 function header() {
   if (!user) { headerActions.innerHTML=themeButton(); return; }
-  headerActions.innerHTML=themeButton()+`${['admin','editor'].includes(user.role)?'<a class="text-button" href="/admin" data-route="/admin">Revisión</a>':''}<span class="user-chip" aria-label="Sesión iniciada: ${esc(user.email)}"><i class="user-dot" aria-hidden="true"></i><span class="user-email">${esc(user.email)}</span></span><a class="text-button" href="/auth/logout">Salir</a>`;
+  headerActions.innerHTML=themeButton()+`${['admin','editor'].includes(user.role)?'<a class="text-button review-link" id="review-link" href="/admin" data-route="/admin">Revisión</a>':''}<span class="user-chip" aria-label="Sesión iniciada: ${esc(user.email)}"><i class="user-dot" aria-hidden="true"></i><span class="user-email">${esc(user.email)}</span></span><a class="text-button" href="/auth/logout">Salir</a>`;
+  if(document.querySelector('#review-link')) startPendingBadge();
 }
 function card(projectId) {
   const p=PROJECTS[projectId], innova=projectId==='innova';
@@ -570,6 +585,16 @@ async function moderatorPage() {
   toc.addEventListener('click',e=>{if(e.target.id!=='admin-jump-go')return;const value=document.querySelector('#admin-jump').value;if(value==='')return;const target=value==='moderation'?document.querySelector('#moderation-content'):headings[Number(value)];target.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});});
   main.querySelector('.lead').after(toc);
   if(user.role==='admin'){const banner=document.createElement('div');banner.id='backup-banner';toc.after(banner);}
+  const summary=document.createElement('section');summary.className='detail-panel pending-summary';summary.id='pending-summary';summary.setAttribute('aria-label','Pendientes y avisos');toc.after(summary);
+  const drawSummary=c=>{const parts=[[c.submissions,'entrega','entregas'],[c.access_requests,'solicitud de acceso','solicitudes de acceso'],[c.comments,'comentario','comentarios']].map(([n,one,many])=>`${n} ${n===1?one:many}`);
+    summary.innerHTML=`<div class="section-head"><h2>Pendientes</h2>${c.total?'<a class="button small" href="#moderation-content">Ir a revisar</a>':''}</div>
+      <p role="status">${c.total?parts.join(' · '):'Nada pendiente de revisión.'}</p>
+      <div class="notice-settings"><label class="helper"><input type="checkbox" id="notify-toggle" ${c.email_enabled?'checked':''} ${c.email_ready?'':'disabled'}> Recibir avisos por correo (como máximo uno por hora)</label>
+      ${c.email_ready?'<button class="button secondary small" type="button" id="notify-test">Enviar correo de prueba a mi dirección</button>':'<p class="helper">El correo saliente aún no está configurado: por ahora los avisos se ven solo aquí y en «Revisión».</p>'}</div>`;};
+  document.addEventListener('pending-counts',e=>{if(document.body.contains(summary))drawSummary(e.detail);});
+  api('/api/admin/pending-counts').then(drawSummary).catch(()=>summary.remove());
+  summary.addEventListener('change',async e=>{if(e.target.id!=='notify-toggle')return;try{notify((await api('/api/admin/notifications',{method:'POST',body:JSON.stringify({enabled:e.target.checked})})).message);}catch(ex){notify(ex.message);e.target.checked=!e.target.checked;}});
+  summary.addEventListener('click',async e=>{if(e.target.id!=='notify-test')return;e.target.disabled=true;try{notify((await api('/api/admin/test-email',{method:'POST',body:'{}'})).message);}catch(ex){notify(ex.message);}finally{e.target.disabled=false;}});
   bindAccessCodes();
   bindMembers();
   loadMembers();
