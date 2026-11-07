@@ -292,6 +292,10 @@ h2 { font-size: clamp(1.35rem, 2.5vw, 2rem); line-height: 1.16; }
 .code-item { display: flex; flex-wrap: wrap; gap: .3rem .8rem; align-items: center; padding: .6rem .8rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
 .code-item code, .code-table code { font-size: 1.05rem; font-weight: 700; letter-spacing: .08em; color: var(--forest); }
 .code-item.inactive { opacity: .55; }
+.code-entry-details { flex-basis: 100%; min-width: 0; }
+.code-entry-details summary { width: fit-content; cursor: pointer; color: var(--forest); font-weight: 650; }
+.code-entry-scroll { max-width: 100%; overflow-x: auto; }
+.code-entry-details td { overflow-wrap: anywhere; }
 .code-table { width: 100%; border-collapse: collapse; margin-top: .8rem; font-size: .92rem; }
 .code-table th, .code-table td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 .submission-status { display: grid; gap: .3rem; padding: .7rem 0; border-bottom: 1px solid var(--line); }

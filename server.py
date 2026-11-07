@@ -232,6 +232,7 @@ STOPWORDS = set("""a al algo ante antes como con contra cual cuando de del desde
 cual cuales como mas menos mucho puede pueden seria serian hacer hace tener tengo""".split())
 UPLOAD_SUFFIXES = (".pdf", ".docx", ".pptx", ".xlsx", ".odt", ".txt")
 BACKUP_DIR = Path(os.environ.get("APP_BACKUP_DIR", DB_PATH.parent / "backups"))
+AUDIT_RETENTION_DAYS = 180
 BACKUP_KEEP = max(1, int(os.environ.get("APP_BACKUP_KEEP", "14")))
 BACKUP_HOURS = int(os.environ.get("APP_BACKUP_HOURS", "24"))
 
@@ -503,6 +504,17 @@ def init_db():
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS audit_events (
+          id INTEGER PRIMARY KEY,
+          event_type TEXT NOT NULL,
+          actor_email TEXT NOT NULL DEFAULT '',
+          subject_email TEXT NOT NULL DEFAULT '',
+          project_id TEXT NOT NULL DEFAULT '',
+          entity_type TEXT NOT NULL DEFAULT '',
+          entity_id INTEGER,
+          ip_hash TEXT NOT NULL DEFAULT '',
+          created_at INTEGER NOT NULL
+        );
         -- Teacher-assigned categories for exit-ticket answers (keyed by the answer's random id, never by person).
         CREATE TABLE IF NOT EXISTS exit_ticket_tags (
           answer_id TEXT NOT NULL,
@@ -512,6 +524,8 @@ def init_db():
         ) WITHOUT ROWID;
         CREATE INDEX IF NOT EXISTS access_codes_email ON access_codes(email, revoked_at, expires_at);
         CREATE INDEX IF NOT EXISTS rate_events_bucket ON rate_events(bucket, created_at);
+        CREATE INDEX IF NOT EXISTS audit_events_entity ON audit_events(entity_type, entity_id, created_at);
+        CREATE INDEX IF NOT EXISTS audit_events_created_at ON audit_events(created_at);
         """)
         rebuilt = ensure_anonymous_tables(db)
         add_missing_columns(db, "submissions", (
@@ -568,6 +582,7 @@ def init_db():
                   (challenge["slug"], challenge["title"], f"Desafío · {challenge['type']}", challenge["summary"],
                    challenge["content"], json.dumps(challenge["tags"], ensure_ascii=False)))
         db.execute("DELETE FROM resources WHERE project_id='incentiva' AND slug IN ('desafio-acceso-rural','desafio-personas-mayores')")
+        purge_audit_events(db)
     if rebuilt:
         # Old rowid pages could still hold the insertion order until the file is rewritten.
         db_connection.execute("VACUUM")
@@ -578,6 +593,19 @@ def add_missing_columns(db, table, columns):
     existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
     for column, definition in columns:
         if column not in existing: db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def record_audit_event(db, event_type, actor_email="", subject_email="", project_id="", entity_type="", entity_id=None, now=None):
+    """Store a bounded-retention audit event without tying it to a deletable user row."""
+    created_at = int(time.time() if now is None else now)
+    purge_audit_events(db, created_at)
+    db.execute("""INSERT INTO audit_events(event_type,actor_email,subject_email,project_id,entity_type,entity_id,created_at)
+      VALUES(?,?,?,?,?,?,?)""", (event_type, actor_email, subject_email, project_id, entity_type, entity_id, created_at))
+
+
+def purge_audit_events(db, now=None):
+    now = int(time.time() if now is None else now)
+    db.execute("DELETE FROM audit_events WHERE created_at < ?", (now - AUDIT_RETENTION_DAYS * 86400,))
 
 
 def token_hash(token: str) -> str:
@@ -1030,6 +1058,16 @@ def backup_loop():
         time.sleep(3600)
 
 
+def audit_cleanup_loop():
+    """Remove expired audit events hourly, even when no new event is written."""
+    while True:
+        try:
+            with connect() as db: purge_audit_events(db)
+        except Exception as error:
+            print(f"No se pudo depurar el registro de auditoría: {error}", flush=True)
+        time.sleep(3600)
+
+
 def institutional_email(value) -> str:
     """Return the normalized address when it has a valid shape and an allowed PUCV domain, else ''."""
     email = str(value or "").strip().lower()
@@ -1353,8 +1391,19 @@ class App(BaseHTTPRequestHandler):
                 rows = db.execute("SELECT id,code,project_id,label,section,expires_at,max_uses,uses,active,roster FROM join_codes WHERE project_id IN ("
                                   + placeholders + ") ORDER BY id DESC LIMIT 50", managed).fetchall()
             now = int(time.time())
+            entries = {}
+            if rows:
+                code_ids = [r["id"] for r in rows]
+                id_slots = ",".join("?" for _ in code_ids)
+                with connect() as db:
+                    activity = db.execute(f"""SELECT entity_id,subject_email,created_at FROM audit_events
+                      WHERE event_type='course_code_login' AND entity_type='join_code' AND project_id IN ({placeholders})
+                      AND entity_id IN ({id_slots}) AND created_at>=? ORDER BY created_at DESC""",
+                      (*managed, *code_ids, now - AUDIT_RETENTION_DAYS * 86400)).fetchall()
+                for event in activity:
+                    entries.setdefault(event["entity_id"], []).append({"email": event["subject_email"], "created_at": event["created_at"]})
             return self.json([{**{k: r[k] for k in r.keys() if k != "roster"}, "code": format_code(r["code"]), "valid": join_code_usable(r, now),
-                               "roster_size": len(r["roster"].split())} for r in rows])
+                               "roster_size": len(r["roster"].split()), "entries": entries.get(r["id"], [])} for r in rows])
         if path == "/api/admin/members":
             user = self.require_user()
             if not user: return
@@ -1863,12 +1912,14 @@ class App(BaseHTTPRequestHandler):
                     if row["section"]:
                         db.execute("UPDATE project_memberships SET section=? WHERE user_id=? AND project_id=? AND status='active' AND section=''",
                                    (row["section"], user["id"], project))
+                    record_audit_event(db, "course_code_login", user["email"], user["email"], project, "join_code", row["id"])
                     return self.json({"ok": True, "project_id": project, "message": "Ya tenías acceso a esta asignatura."})
                 member = db.execute("SELECT revoked FROM project_memberships WHERE user_id=? AND project_id=?", (user["id"], project)).fetchone()
                 if member and member["revoked"]:
                     return self.json({"error": "Tu acceso a esta asignatura fue retirado. Contacta a la docente."}, 403)
                 # A code created for one paralelo also records it, so deliveries and the catalog can be filtered by section.
                 apply_join_code(db, user["id"], row)
+                record_audit_event(db, "course_code_login", user["email"], user["email"], project, "join_code", row["id"])
             return self.json({"ok": True, "project_id": project, "message": f"Listo: ya tienes acceso a {PROJECTS[project]['name']}."})
         if path == "/api/admin/join-codes":
             user = self.require_user()
@@ -2799,6 +2850,7 @@ if __name__ == "__main__":
         commands[sys.argv[1]](sys.argv[2:])
         sys.exit(0)
     init_db()
+    threading.Thread(target=audit_cleanup_loop, daemon=True).start()
     if BACKUP_HOURS > 0:
         threading.Thread(target=backup_loop, daemon=True).start()
     print(f"Repositorio PUCV listo en {BASE_URL} (demo={'sí' if DEMO_AUTH else 'no'})")

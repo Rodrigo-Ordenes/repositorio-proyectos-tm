@@ -12,6 +12,8 @@ backups/
 *.sqlite3
 *.sqlite3-*
 _respaldo_*/
+sos.txt
+MI_CODIGO_SOS.txt
 
 __pycache__/
 .DS_Store
