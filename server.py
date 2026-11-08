@@ -36,8 +36,17 @@ import qr
 ROOT = Path(__file__).resolve().parent
 
 
+FILE_ENV = {}
+
+
+def env(key, default=""):
+    """Configuration value: the real environment first, then config.env."""
+    return os.environ.get(key, FILE_ENV.get(key, default))
+
+
 def load_env_file(path: Path):
-    """KEY=value lines shared by the hosting app and its cron jobs, kept outside the repository; the real environment wins."""
+    """KEY=value lines shared by the hosting app and its cron jobs, kept outside the repository; the real environment wins.
+    Values stay in FILE_ENV, not os.environ: cPanel's Python may run with an ASCII locale where «Bioanálisis» cannot be stored."""
     if not path.is_file(): return
     if path.stat().st_mode & 0o077:
         print(f"Aviso: {path} debe tener permisos 600 (contiene secretos).", file=sys.stderr, flush=True)
@@ -46,26 +55,26 @@ def load_env_file(path: Path):
         if not sep or key.startswith("#") or not re.fullmatch(r"[A-Z][A-Z0-9_]*", key.strip()): continue
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"": value = value[1:-1]
-        os.environ.setdefault(key.strip(), value)
+        FILE_ENV.setdefault(key.strip(), value)
 
 
 load_env_file(Path(os.environ.get("APP_ENV_FILE", ROOT.parent / "repositorio-datos" / "config.env")))
 DATA_DIR = ROOT / "data"
-DB_PATH = Path(os.environ.get("APP_DB_PATH", DATA_DIR / "repository.sqlite3"))
-UPLOAD_DIR = Path(os.environ.get("APP_UPLOAD_DIR", DATA_DIR / "submissions_files"))
-PORT = int(os.environ.get("PORT", "8000"))
-BASE_URL = os.environ.get("APP_BASE_URL", f"http://localhost:{PORT}").rstrip("/")
-ALLOWED_EMAIL_DOMAINS = {d.strip().lower() for d in os.environ.get(
+DB_PATH = Path(env("APP_DB_PATH", DATA_DIR / "repository.sqlite3"))
+UPLOAD_DIR = Path(env("APP_UPLOAD_DIR", DATA_DIR / "submissions_files"))
+PORT = int(env("PORT", "8000"))
+BASE_URL = env("APP_BASE_URL", f"http://localhost:{PORT}").rstrip("/")
+ALLOWED_EMAIL_DOMAINS = {d.strip().lower() for d in env(
     "PUCV_EMAIL_DOMAINS", "mail.pucv.cl,pucv.cl"
 ).split(",") if d.strip()}
-ADMIN_EMAILS = {email.strip().lower() for email in os.environ.get("PUCV_ADMIN_EMAILS", "").split(",") if email.strip()}
+ADMIN_EMAILS = {email.strip().lower() for email in env("PUCV_ADMIN_EMAILS", "").split(",") if email.strip()}
 # Emergency ("SOS") sign-in: "correo|sal|hash" from the PUCV_SOS variable or a private file next to the database.
 # It never lives in the repository; `python3 server.py codigo-sos correo` creates it.
 SOS_FILE = DB_PATH.parent / "sos.txt"
 
 
 def load_sos():
-    raw = os.environ.get("PUCV_SOS", "").strip()
+    raw = env("PUCV_SOS", "").strip()
     if not raw and SOS_FILE.exists():
         raw = SOS_FILE.read_text().strip()
     parts = raw.split("|")
@@ -77,22 +86,22 @@ def load_sos():
 SOS = load_sos()
 if SOS: ADMIN_EMAILS.add(SOS["email"])
 PROJECT_ADMIN_EMAILS = {
-    "incentiva": {email.strip().lower() for email in os.environ.get("PUCV_INCENTIVA_ADMINS", "").split(",") if email.strip()},
-    "innova": {email.strip().lower() for email in os.environ.get("PUCV_INNOVA_ADMINS", "").split(",") if email.strip()},
+    "incentiva": {email.strip().lower() for email in env("PUCV_INCENTIVA_ADMINS", "").split(",") if email.strip()},
+    "innova": {email.strip().lower() for email in env("PUCV_INNOVA_ADMINS", "").split(",") if email.strip()},
 }
-SMTP_HOST = os.environ.get("SMTP_HOST", "")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
-SMTP_USER = os.environ.get("SMTP_USER", "")
-SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
-SMTP_FROM = os.environ.get("SMTP_FROM", "")
-SMTP_SECURITY = os.environ.get("SMTP_SECURITY", "starttls").lower()
-DEMO_AUTH = os.environ.get("APP_DEMO_AUTH", "0") == "1"
+SMTP_HOST = env("SMTP_HOST", "")
+SMTP_PORT = int(env("SMTP_PORT", "587"))
+SMTP_USER = env("SMTP_USER", "")
+SMTP_PASSWORD = env("SMTP_PASSWORD", "")
+SMTP_FROM = env("SMTP_FROM", "")
+SMTP_SECURITY = env("SMTP_SECURITY", "starttls").lower()
+DEMO_AUTH = env("APP_DEMO_AUTH", "0") == "1"
 # Google sign-in uses an OAuth client the course team creates in its own Google Cloud project.
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
-GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET", "").strip()
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-TRUST_PROXY = os.environ.get("TRUST_PROXY", "0") == "1"
+TRUST_PROXY = env("TRUST_PROXY", "0") == "1"
 SESSION_SECONDS = 60 * 60 * 12
 MAGIC_LINK_SECONDS = 15 * 60
 OAUTH_STATE_SECONDS = 10 * 60
@@ -117,7 +126,7 @@ PROJECTS = {
     },
 }
 # Course sections (paralelos); each list can be replaced with PUCV_INCENTIVA_SECTIONS / PUCV_INNOVA_SECTIONS.
-PROJECT_SECTIONS = {project: [s.strip()[:60] for s in os.environ.get(f"PUCV_{project.upper()}_SECTIONS", default).split(",") if s.strip()]
+PROJECT_SECTIONS = {project: [s.strip()[:60] for s in env(f"PUCV_{project.upper()}_SECTIONS", default).split(",") if s.strip()]
                     for project, default in (("incentiva", "Bioanálisis,Oftalmología"), ("innova", ""))}
 # Structured delivery fields follow each course guide; they shape the published record and its catalog tags.
 PROJECT_FIELDS = {
@@ -144,7 +153,7 @@ PROJECT_FIELDS = {
     ],
 }
 # Projects whose consented student work any signed-in PUCV account can read (vitrina / modo lector), e.g. "innova".
-OPEN_PROJECTS = [p.strip() for p in os.environ.get("PUCV_OPEN_PROJECTS", "").split(",") if p.strip() in PROJECTS]
+OPEN_PROJECTS = [p.strip() for p in env("PUCV_OPEN_PROJECTS", "").split(",") if p.strip() in PROJECTS]
 GUIDE_QUESTIONS = {
     "innova": "¿Qué evidencia conecta el hallazgo del caso con la alteración molecular y qué control ayudaría a confiar en el resultado?",
     "incentiva": "¿Qué evidencia muestra que la solución responde a una necesidad real de la comunidad y qué indicador usarían para comprobarlo?",
@@ -223,7 +232,7 @@ El uso declarado de IA fue un apoyo y no reemplazó el trabajo del equipo.
 Recomendaría esta metodología para otras asignaturas.""" for project in PROJECTS},
 }
 # Course cases are simulated (no patient data); their text ships in seeds/ so deploying never needs the course folder.
-CASES_DIR = Path(os.environ.get("APP_CASES_DIR", ROOT / "Innova en el aula 2S 2026"))
+CASES_DIR = Path(env("APP_CASES_DIR", ROOT / "Innova en el aula 2S 2026"))
 SEED_CASES = ROOT / "seeds" / "casos_innova.json"
 INNOVA_CASES = [
     ("innova", "hbb-variante-proteina", "HBB: de la variante al cambio funcional", "Caso clínico-molecular", "Caso de anemia con alteración de HBB. El equipo conecta la variante con la proteína, el fenotipo y una estrategia diagnóstica.", ["HBB", "Variación genética", "Proteína"], "Caso_Clinico_1_*.docx"),
@@ -243,15 +252,15 @@ PRE_SESSION_QUESTIONS = {
                   "¿Qué evidencia crees que necesita tu equipo y dónde la buscarías?",
                   "Escribe una pregunta que quieras resolver en la sesión."],
 }
-DEFAULT_COHORT = os.environ.get("APP_COHORT", "2026-2").strip() or "2026-2"
+DEFAULT_COHORT = env("APP_COHORT", "2026-2").strip() or "2026-2"
 STOPWORDS = set("""a al algo ante antes como con contra cual cuando de del desde donde durante el ella ellas ellos en entre era es esa ese eso esta este esto estos fue ha hay la las le les lo los mas me mi mis muy ni no nos o otra otro para pero poco por porque que quien se sea ser si sin sobre su sus tambien te tiene todo tu un una uno unos y ya yo hoy creo sesion
 cual cuales como mas menos mucho puede pueden seria serian hacer hace tener tengo""".split())
 UPLOAD_SUFFIXES = (".pdf", ".docx", ".pptx", ".xlsx", ".odt", ".txt")
-BACKUP_DIR = Path(os.environ.get("APP_BACKUP_DIR", DB_PATH.parent / "backups"))
+BACKUP_DIR = Path(env("APP_BACKUP_DIR", DB_PATH.parent / "backups"))
 AUDIT_RETENTION_DAYS = 180
 BACKUP_REMINDER_DAYS = 7
-BACKUP_KEEP = max(1, int(os.environ.get("APP_BACKUP_KEEP", "14")))
-BACKUP_HOURS = int(os.environ.get("APP_BACKUP_HOURS", "24"))
+BACKUP_KEEP = max(1, int(env("APP_BACKUP_KEEP", "14")))
+BACKUP_HOURS = int(env("APP_BACKUP_HOURS", "24"))
 
 
 def connect():
@@ -835,7 +844,7 @@ def project_indicators(db, project, cohort=None):
     cohort = cohort or current_cohort(db)
     since, until = cohort_window(db, cohort)
     one = lambda sql, *args: db.execute(sql, args).fetchone()[0]
-    deadline = os.environ.get(f"PUCV_{project.upper()}_DEADLINE", "").strip()
+    deadline = env(f"PUCV_{project.upper()}_DEADLINE", "").strip()
     subs = "FROM submissions WHERE project_id=? AND cohort=?"
     open_subs = subs + " AND status<>'rejected'"
     teams = one("SELECT COUNT(DISTINCT lower(trim(section))||'/'||lower(trim(team_name))) " + open_subs, project, cohort)
@@ -3072,7 +3081,7 @@ def cli_diagnose(args):
             path.mkdir(parents=True, exist_ok=True); probe = path / ".prueba-escritura"; probe.write_text("ok"); probe.unlink(); ok = True
         except OSError: ok = False
         check(ok, f"{label} escribible en {path}", f"Dar permisos de escritura o cambiar la ruta de {label.lower()}.")
-    on_render = bool(os.environ.get("RENDER"))
+    on_render = bool(env("RENDER"))
     check(not on_render or str(DB_PATH).startswith("/var/data"), f"Base en disco persistente ({DB_PATH})",
           "En Render, APP_DB_PATH debe estar en /var/data o se pierde en cada despliegue.")
     free = shutil.disk_usage(DB_PATH.parent).free / 1024 ** 3
@@ -3082,10 +3091,10 @@ def cli_diagnose(args):
     check(SOS is not None, "Código de emergencia (SOS) configurado",
           "python3 server.py codigo-sos tu-correo y copiar la línea que imprime a la variable PUCV_SOS.", critical=False)
     for project in PROJECTS:
-        deadline = os.environ.get(f"PUCV_{project.upper()}_DEADLINE", "")
+        deadline = env(f"PUCV_{project.upper()}_DEADLINE", "")
         if deadline:
             check(bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", deadline)), f"Plazo de {project}: {deadline}", "Usar el formato AAAA-MM-DD.")
-    check(not TRUST_PROXY or on_render or os.environ.get("TRUST_PROXY_CONFIRMED") == "1", "TRUST_PROXY solo detrás de un proxy",
+    check(not TRUST_PROXY or on_render or env("TRUST_PROXY_CONFIRMED") == "1", "TRUST_PROXY solo detrás de un proxy",
           "Sin proxy delante, TRUST_PROXY=1 permite falsificar la IP.", critical=False)
     print("Diagnóstico del repositorio\n")
     for ok, critical, label, fix in results:
@@ -3106,4 +3115,4 @@ if __name__ == "__main__":
     if BACKUP_HOURS > 0:
         threading.Thread(target=backup_loop, daemon=True).start()
     print(f"Repositorio PUCV listo en {BASE_URL} (demo={'sí' if DEMO_AUTH else 'no'})")
-    ThreadingHTTPServer((os.environ.get("HOST", "127.0.0.1"), PORT), App).serve_forever()
+    ThreadingHTTPServer((env("HOST", "127.0.0.1"), PORT), App).serve_forever()

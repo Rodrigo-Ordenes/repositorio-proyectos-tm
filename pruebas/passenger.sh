@@ -32,3 +32,9 @@ chmod 644 "$S/cfg/config.env"
 check "config.env legible por otros: aviso" "$(cd "$APP" && APP_ENV_FILE="$S/cfg/config.env" python3 -c "import server" 2>&1)" "permisos 600"
 check "sin config.env el servidor arranca igual" "$(cd "$APP" && APP_ENV_FILE="$S/no-existe.env" python3 -c "import server;print('ok')")" "^ok$"
 check "config.env nunca en el repositorio" "$(cd "$APP" && git ls-files | grep -c 'config.env')" "^0$"
+
+# Accents in config.env: the hosting's Python runs with an ASCII locale, where os.environ cannot hold «Bioanálisis».
+printf 'PUCV_INCENTIVA_SECTIONS=Bioanálisis,Oftalmología\nSMTP_FROM=Repositorio Tecnología Médica <a@b.cl>\n' > "$S/cfg/tildes.env"; chmod 600 "$S/cfg/tildes.env"
+got=$(cd "$APP" && env -u PUCV_INCENTIVA_SECTIONS -u SMTP_FROM APP_ENV_FILE="$S/cfg/tildes.env" python3 -c "import os,server;print(server.PROJECT_SECTIONS['incentiva'], server.SMTP_FROM, 'PUCV_INCENTIVA_SECTIONS' in os.environ)")
+check "config.env con tildes se lee bien" "$got" "\['Bioanálisis', 'Oftalmología'\] Repositorio Tecnología Médica <a@b.cl>"
+check "los valores de config.env no pasan por las variables del sistema" "$got" "False$"
