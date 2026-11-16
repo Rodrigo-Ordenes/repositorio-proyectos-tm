@@ -266,7 +266,9 @@ function showDelivery(projectId) {
       <label class="helper"><input name="video_length_confirmed" type="checkbox" required> Confirmamos que este es el único video final del equipo y que dura máximo cinco minutos.</label>
       <label class="helper"><input name="consent" type="checkbox" required> Confirmamos que los recursos externos tienen permiso de uso y que quienes aparecen o se escuchan en forma identificable autorizaron su participación; también podemos hacer el video sin rostros ni voces identificables. Esta confirmación no autoriza usos posteriores (<a href="/consentimiento" data-route="/consentimiento">autorización opcional de imagen y voz</a>).</label>
       <label class="helper"><input name="showcase_consent" type="checkbox"> Opcional: autorizamos mostrar el trabajo en la vitrina abierta a otros cursos y cohortes de la PUCV (solo lectura).</label>
-      <div class="error-text" id="submission-error" role="alert"></div><button class="button project-button" type="submit">Enviar a revisión →</button>
+      <div class="error-text" id="submission-error" role="alert"></div>
+      <p class="helper" id="s-buttons-help">«Guardar borrador» guarda lo escrito sin enviarlo (los archivos se eligen al enviar); el equipo lo encuentra al entrar con su correo. «Enviar a revisión» lo manda a la docente.</p>
+      <div class="moderation-actions"><button class="button secondary" type="button" id="s-save-draft">Guardar borrador</button><button class="button project-button" type="submit" id="s-send">Enviar a revisión →</button><button class="button secondary" type="button" id="s-cancel-edit" hidden>Cancelar edición</button></div>
     </form></div>`;
   document.querySelector('#s-video').addEventListener('change',async e=>{const box=document.querySelector('#s-video-status'), url=e.target.value.trim();box.textContent='';
     if(!/^https:\/\/drive\.google\.com\/file\/d\//.test(url))return; box.textContent='Revisando si el video de Drive se puede ver…';
@@ -284,6 +286,30 @@ function showDelivery(projectId) {
     draftForm.addEventListener('change',e=>{if(e.target.matches('.score-select'))updateAlternativeAverages(draftForm,config.alternative_criteria);});}
   let draftTimer=null;
   draftForm.addEventListener('input',()=>{clearTimeout(draftTimer);draftTimer=setTimeout(()=>{try{localStorage.setItem(draftKey,JSON.stringify(Object.fromEntries(draftFields().map(el=>[el.name,el.value]))));}catch{}},400);});
+  // Saved draft on the server: shared with teammates listed by address, so the work is not tied to one device.
+  let editingId=null;
+  const sendButton=document.querySelector('#s-send'), cancelEdit=document.querySelector('#s-cancel-edit'), saveDraft=document.querySelector('#s-save-draft');
+  const errorBox=document.querySelector('#submission-error');
+  const leaveEdit=()=>{editingId=null;draftForm.reset();sendButton.textContent='Enviar a revisión →';cancelEdit.hidden=true;saveDraft.hidden=false;
+    document.querySelector('#edit-notice')?.remove();updateAlternativeAverages(draftForm,config.alternative_criteria||[]);};
+  cancelEdit.addEventListener('click',leaveEdit);
+  saveDraft.addEventListener('click',async()=>{errorBox.textContent='';saveDraft.disabled=true;
+    try{const r=await api('/api/submission-drafts',{method:'POST',body:JSON.stringify({project_id:projectId,data:formSnapshot(draftForm)})});notify(r.message);}
+    catch(ex){errorBox.textContent=ex.message;}finally{saveDraft.disabled=false;}});
+  api(`/api/submission-drafts?project=${projectId}`).then(({draft})=>{if(!draft||editingId)return;
+    const when=new Date(draft.updated_at*1000).toLocaleString('es-CL',{dateStyle:'short',timeStyle:'short'});
+    draftForm.insertAdjacentHTML('afterbegin',`<div class="notice" id="server-draft-notice" role="status">Hay un borrador guardado ${draft.own?'por ti':'por '+esc(draft.author)} el ${esc(when)}. <button class="text-button" type="button" id="server-draft-load">Cargar borrador guardado</button></div>`);
+    document.querySelector('#server-draft-load').addEventListener('click',()=>{fillForm(draftForm,draft.data);updateAlternativeAverages(draftForm,config.alternative_criteria||[]);
+      document.querySelector('#server-draft-notice')?.remove();notify('Borrador cargado. Revisen, elijan los archivos si corresponde y envíen.');});}).catch(()=>{});
+  document.querySelector('#my-submissions').addEventListener('click',async e=>{const b=e.target.closest('[data-edit-submission]');if(!b)return;
+    try{const d=await api(`/api/submissions/${b.dataset.editSubmission}/edit`);
+      fillForm(draftForm,deliveryToFields(d,config));updateAlternativeAverages(draftForm,config.alternative_criteria||[]);
+      editingId=d.id;sendButton.textContent='Guardar cambios';cancelEdit.hidden=false;saveDraft.hidden=true;
+      document.querySelector('#edit-notice')?.remove();document.querySelector('#server-draft-notice')?.remove();
+      const files=[d.evidence_filename,d.model_filename].filter(Boolean).map(esc).join(' y ');
+      draftForm.insertAdjacentHTML('afterbegin',`<div class="notice warning" id="edit-notice" role="status">Estás editando «${esc(d.title)}». Cambien lo necesario y pulsen «Guardar cambios»: la versión anterior queda respaldada.${files?` Si no eligen archivos nuevos, se mantienen los actuales (${files}).`:''} Vuelvan a marcar las confirmaciones del final.</div>`);
+      draftForm.scrollIntoView({behavior:'smooth',block:'start'});}
+    catch(ex){notify(ex.message);}});
   document.querySelector('#submission-form').addEventListener('submit',async event=>{
     event.preventDefault(); const formElement=event.currentTarget, form=new FormData(formElement), error=document.querySelector('#submission-error'), button=formElement.querySelector('button[type="submit"]');
     try {
@@ -293,8 +319,8 @@ function showDelivery(projectId) {
       button.disabled=true;
       const evidence_file_base64=file?await fileToBase64(file):'', model_file_base64=model?await fileToBase64(model):'';
       const project_fields=Object.fromEntries(config.fields.map(f=>[f.key,form.get(`pf_${f.key}`)||'']));
-      const res=await api('/api/submissions',{method:'POST',body:JSON.stringify({project_id:projectId,team_name:form.get('team_name'),section:form.get('section')||'',members:form.get('members'),title:form.get('title'),summary:form.get('summary'),video_url:form.get('video_url'),evidence_url:form.get('evidence_url'),evidence_file_base64,evidence_filename:file?.name||'',ai_declaration:form.get('ai_declaration'),project_fields,alternatives:readAlternatives(formElement,config.alternative_criteria||[]),model_file_base64,model_filename:model?.name||'',video_length_confirmed:form.get('video_length_confirmed')==='on',consent_confirmed:form.get('consent')==='on',has_subtitles:form.get('has_subtitles')==='on',showcase_consent:form.get('showcase_consent')==='on'})});
-      notify(res.message); clearTimeout(draftTimer); try{localStorage.removeItem(draftKey);}catch{} document.querySelector('#draft-notice')?.remove(); formElement.reset(); error.textContent=''; await loadMySubmissions(projectId);
+      const res=await api(editingId?`/api/submissions/${editingId}/update`:'/api/submissions',{method:'POST',body:JSON.stringify({project_id:projectId,team_name:form.get('team_name'),section:form.get('section')||'',members:form.get('members'),title:form.get('title'),summary:form.get('summary'),video_url:form.get('video_url'),evidence_url:form.get('evidence_url'),evidence_file_base64,evidence_filename:file?.name||'',ai_declaration:form.get('ai_declaration'),project_fields,alternatives:readAlternatives(formElement,config.alternative_criteria||[]),model_file_base64,model_filename:model?.name||'',video_length_confirmed:form.get('video_length_confirmed')==='on',consent_confirmed:form.get('consent')==='on',has_subtitles:form.get('has_subtitles')==='on',showcase_consent:form.get('showcase_consent')==='on'})});
+      notify(res.message); clearTimeout(draftTimer); try{localStorage.removeItem(draftKey);}catch{} document.querySelector('#draft-notice')?.remove(); document.querySelector('#server-draft-notice')?.remove(); leaveEdit(); error.textContent=''; await loadMySubmissions(projectId);
       if(res.id) document.querySelector('#my-submissions').scrollIntoView({behavior:'smooth',block:'start'});
     }
     catch(err){error.textContent=err.message;}
@@ -310,6 +336,25 @@ function alternativesFieldset(criteria) {
     <tbody>${criteria.map((c,i)=>`<tr><td>${esc(c)}</td>${[0,1,2].map(a=>`<td>${select(a,i)}</td>`).join('')}</tr>`).join('')}
     <tr><td><b>Promedio</b></td>${[0,1,2].map(a=>`<td><output id="alt${a}-average" for="${criteria.map((_,i)=>`alt${a}_c${i}`).join(' ')}">—</output></td>`).join('')}</tr>
     <tr><td><b>Elegida</b></td>${[0,1,2].map(a=>`<td><label><input type="radio" name="alt_chosen" value="${a}"${a===0?' checked':''}> Esta</label></td>`).join('')}</tr></tbody></table></div></fieldset>`;
+}
+// Every named field except files, as plain text: what a draft keeps and what an edit fills back in.
+function formSnapshot(form) {
+  const data={};
+  [...form.elements].forEach(el=>{if(!el.name||['file','submit','button'].includes(el.type))return;
+    if(el.type==='checkbox')data[el.name]=el.checked?'on':''; else if(el.type==='radio'){if(el.checked)data[el.name]=el.value;} else data[el.name]=el.value;});
+  return data;
+}
+function fillForm(form, data) {
+  [...form.elements].forEach(el=>{if(!el.name||!(el.name in data)||['file','submit','button'].includes(el.type))return;
+    if(el.type==='checkbox')el.checked=data[el.name]==='on'; else if(el.type==='radio')el.checked=String(data[el.name])===el.value; else el.value=data[el.name]??'';});
+}
+function deliveryToFields(d, config) {
+  const data={team_name:d.team_name,section:d.section,members:d.members,title:d.title,summary:d.summary,video_url:d.video_url,evidence_url:d.evidence_url,
+    ai_declaration:d.ai_declaration,has_subtitles:d.has_subtitles?'on':'',showcase_consent:d.showcase_consent?'on':''};
+  (config.fields||[]).forEach(f=>{data[`pf_${f.key}`]=d.project_fields?.[f.key]||'';});
+  const alt=d.alternatives;
+  if(alt?.items?.length&&alt.scale==='percent'){alt.items.forEach((it,a)=>{data[`alt${a}_name`]=it.name;it.scores.forEach((v,i)=>{data[`alt${a}_c${i}`]=String(v);});});data.alt_chosen=String(alt.chosen||0);}
+  return data;
 }
 function readAlternatives(form, criteria) {
   if(!criteria.length) return null;
@@ -425,16 +470,30 @@ async function surveyPage(code) {
   let t;
   try{t=await api(`/api/surveys/${encodeURIComponent(code)}`);}
   catch(e){main.innerHTML=`<div class="empty-state"><h1>Encuesta no disponible</h1><p>${esc(e.message)}</p><a class="button small" href="/" data-route="/">Ir a la portada</a></div>`;return;}
-  const p=PROJECTS[t.project_id], theme=t.project_id==='innova'?'innova-theme':'', head=`<div class="eyebrow">${esc(p.name)} · ${t.kind==='kpsi'?'Autoevaluación KPSI':'Encuesta de percepción'}</div><h1>${esc(t.title)}</h1>`;
+  const p=PROJECTS[t.project_id], theme=t.project_id==='innova'?'innova-theme':'', head=`<div class="eyebrow">${esc(p.name)}${t.section?' · '+esc(t.section):''} · ${t.kind==='kpsi'?'Autoevaluación KPSI':'Encuesta de percepción'}</div><h1>${esc(t.title)}</h1>`;
   if(t.answered||!t.open){main.innerHTML=`<div class="resource-detail ${theme}">${head}<div class="detail-panel"><p>${t.answered?'Ya respondiste esta encuesta. ¡Gracias!':'Esta encuesta ya cerró.'}</p><a class="text-button" href="/${t.project_id}" data-route="/${t.project_id}">Volver a ${esc(p.name)} →</a></div></div>`;return;}
-  let dimension=null;
-  const rows=t.items.map((item,i)=>{const header=item.dimension!==dimension?`<h2 class="survey-dimension">${esc(item.dimension||'Enunciados')}</h2>`:'';dimension=item.dimension;
-    return `${header}<fieldset class="rubric-row"><legend>${i+1}. ${esc(item.text)}</legend><div class="rubric-levels">${t.scale.map((level,j)=>`<label><input type="radio" name="i${i}" value="${j+1}" required> ${j+1} · ${esc(level)}</label>`).join('')}</div></fieldset>`;}).join('');
+  let dimension=null, num=0, choiceRendered=false;
+  const choiceItems=t.items.map((it,idx)=>({...it,idx})).filter(it=>it.choice);
+  const rows=t.items.map((item,i)=>{
+    if(item.choice){
+      if(choiceRendered) return '';
+      choiceRendered=true;
+      const header=item.dimension!==dimension?`<h2 class="survey-dimension">${esc(item.dimension||'Caso trabajado por tu equipo')}</h2>`:'';
+      dimension=item.dimension;
+      return `${header}<fieldset class="rubric-row"><legend>Marca únicamente el caso específico que trabajó tu equipo</legend><div class="form-grid">${choiceItems.map(c=>`<label><input type="radio" name="survey_choice" value="${c.idx}" required> ${esc(c.text)}</label>`).join('')}</div></fieldset>`;
+    }
+    num+=1;
+    const header=item.dimension!==dimension?`<h2 class="survey-dimension">${esc(item.dimension||'Enunciados')}</h2>`:'';
+    dimension=item.dimension;
+    return `${header}<fieldset class="rubric-row"><legend>${num}. ${esc(item.text)}</legend><div class="rubric-levels">${t.scale.map((level,j)=>`<label><input type="radio" name="i${i}" value="${j+1}" required> ${j+1} · ${esc(level)}</label>`).join('')}</div></fieldset>`;
+  }).join('');
   main.innerHTML=`<div class="resource-detail ${theme}">${head}<p class="lead">${t.kind==='kpsi'?'Marca qué tan bien dominas hoy cada contenido. No es una evaluación: sirve para comparar el inicio con el cierre del proyecto.':'Cuéntanos cómo viviste la experiencia. Tus respuestas ayudan a mejorar el proyecto para la próxima cohorte.'} No se guarda tu nombre o correo junto a lo que respondes; para limitar duplicados, el sistema registra por separado quién participó.</p>
     <form id="survey-answer" class="detail-panel form-grid">${rows}<div class="field"><label for="sv-comment">Comentario (opcional)</label><textarea id="sv-comment" maxlength="1500" rows="3"></textarea></div><div class="error-text" role="alert"></div><button class="button project-button" type="submit">Enviar respuestas →</button></form></div>`;
   const form=document.querySelector('#survey-answer');
   form.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(form), button=form.querySelector('button[type="submit"]');button.disabled=true;
-    try{const r=await api(`/api/surveys/${encodeURIComponent(code)}/answer`,{method:'POST',body:JSON.stringify({values:t.items.map((_,i)=>Number(f.get(`i${i}`))),comment:document.querySelector('#sv-comment').value})});notify(r.message);surveyPage(code);}
+    const chosen=f.get('survey_choice');
+    const values=t.items.map((item,i)=>item.choice?(String(i)===String(chosen)?1:0):Number(f.get(`i${i}`)));
+    try{const r=await api(`/api/surveys/${encodeURIComponent(code)}/answer`,{method:'POST',body:JSON.stringify({values,comment:document.querySelector('#sv-comment').value})});notify(r.message);surveyPage(code);}
     catch(ex){form.querySelector('.error-text').textContent=ex.message;button.disabled=false;}});
 }
 // Icons repeat the meaning of the color, which red/green color blindness can't tell apart.
@@ -442,7 +501,7 @@ const SUBMISSION_STATUS={review:'◷ En revisión docente',approved:'✓ Aprobad
 async function loadMySubmissions(projectId) {
   const box=document.querySelector('#my-submissions'); if(!box)return;
   try{const rows=await api(`/api/my-submissions?project=${projectId}`);
-    box.innerHTML=rows.length?`<section class="detail-panel"><h2>Tus entregas</h2>${rows.map(s=>`<article class="submission-status status-${esc(s.status)}"><div><strong>${esc(s.title)}</strong><span class="helper"> · ${esc(s.team_name)}${s.section?' · '+esc(s.section):''} · ${esc(s.created_at)}</span></div><span class="status-label">${esc(SUBMISSION_STATUS[s.status]||s.status)}</span>${s.review_note?`<p class="helper">Comentario docente: ${esc(s.review_note)}</p>`:''}${s.status==='rejected'?'<p class="helper">Pueden corregir y volver a enviar con el mismo nombre de equipo.</p>':''}<a class="text-button" href="/ficha/${Number(s.id)}" data-route="/ficha/${Number(s.id)}">Ver la ficha de evidencia generada →</a></article>`).join('')}</section>`:'';
+    box.innerHTML=rows.length?`<section class="detail-panel"><h2>Tus entregas</h2>${rows.map(s=>`<article class="submission-status status-${esc(s.status)}"><div><strong>${esc(s.title)}</strong><span class="helper"> · ${esc(s.team_name)}${s.section?' · '+esc(s.section):''} · ${esc(s.created_at)}</span></div><span class="status-label">${esc(SUBMISSION_STATUS[s.status]||s.status)}</span>${s.review_note?`<p class="helper">Comentario docente: ${esc(s.review_note)}</p>`:''}${s.status==='rejected'?'<p class="helper">Pueden corregir y volver a enviar con el mismo nombre de equipo.</p>':''}<div class="moderation-actions"><a class="text-button" href="/ficha/${Number(s.id)}" data-route="/ficha/${Number(s.id)}">Ver la ficha de evidencia generada →</a>${s.can_edit?`<button class="button secondary small" type="button" data-edit-submission="${Number(s.id)}">Editar entrega</button>`:''}</div></article>`).join('')}</section>`:'';
   }catch{box.innerHTML='';}
 }
 function showForum(projectId) {
@@ -938,16 +997,23 @@ async function projectionPage(projectId) {
     else if((e.key==='f'||e.key==='F')&&canFull)fullscreen();};
   try{await load();}catch(e){main.innerHTML=`<div class="empty-state"><h1>Modo proyección no disponible</h1><p>${esc(e.message)}</p></div>`;}
 }
+function withSectionCasesText(text, projectId, section) {
+  const cases=projectConfig[projectId]?.kpsi_cases?.[section]||[];
+  if(!cases.length) return text;
+  const kept=String(text||'').split(/\r?\n/).filter(l=>!/^\s*(?:\[\s*[xX✓✔]?\s*\]|[-•*])\s+/.test(l)&&!/^\s*Caso\s+[1-7]\b/i.test(l)&&!/^#\s*Aplicación al expediente territorial/i.test(l.trim())).join('\n').trim();
+  return `${kept}\n# Aplicación al expediente territorial asignado a tu equipo\n${cases.map(c=>`- ${c}`).join('\n')}`.trim();
+}
 function surveysPanel() {
   const first=managedProjects[0];
   return `<section class="detail-panel resource-detail"><h2>Encuestas: KPSI y percepción</h2><p class="helper">Aplica el KPSI de entrada antes de las sesiones y el de salida al cierre: los resultados muestran el cambio por enunciado. La encuesta de percepción va al final. El contenido de las respuestas no lleva nombre o correo; la participación se registra por separado. Se responden con QR.</p>
     <form id="survey-form" class="form-grid">
       <div class="code-columns"><div class="field"><label for="sv-project">Asignatura</label><select id="sv-project" class="select">${projectOptions()}</select></div>
+      <div class="field" id="sv-section-wrap"><label for="sv-section">Paralelo</label><select id="sv-section" class="select"><option value="">Toda la asignatura</option></select></div>
       <div class="field"><label for="sv-kind">Tipo</label><select id="sv-kind" class="select"><option value="kpsi">KPSI (autoevaluación 1 a 4)</option><option value="percepcion">Percepción (acuerdo 1 a 5)</option></select></div></div>
       <div class="code-columns"><div class="field"><label for="sv-moment">Momento</label><select id="sv-moment" class="select"><option value="entrada">Entrada</option><option value="salida">Salida</option><option value="cierre">Cierre</option></select></div>
       <div class="field"><label for="sv-hours">Abierta durante (horas)</label><input id="sv-hours" type="number" min="1" max="720" value="72"></div></div>
       <div class="field"><label for="sv-title">Título</label><input id="sv-title" maxlength="120" placeholder="KPSI de entrada · Fase 1"></div>
-      <details class="code-panel"><summary>Enunciados (plantilla editable)</summary><p class="helper">Una línea por enunciado; las líneas que empiezan con # agrupan por dimensión. Para comparar entrada y salida, usa los mismos enunciados.<span id="sv-note"></span></p><textarea id="sv-items" aria-label="Enunciados de la encuesta, uno por línea" rows="10">${esc(projectConfig[first]?.survey_templates?.kpsi||'')}</textarea></details>
+      <details class="code-panel"><summary>Enunciados y casos seleccionables (plantilla editable)</summary><p class="helper">Una línea por enunciado; las líneas que empiezan con <code>#</code> agrupan por dimensión y las que empiezan con <code>-</code> son casos seleccionables (el estudiante marca el caso de su equipo).<span id="sv-note"></span></p><textarea id="sv-items" aria-label="Enunciados de la encuesta, uno por línea" rows="10">${esc(projectConfig[first]?.survey_templates?.kpsi||'')}</textarea></details>
       <div class="error-text" id="sv-error" role="alert"></div><button class="button" type="submit">Crear encuesta y mostrar QR</button></form>
     <div id="survey-list" class="material-list"></div></section>`;
 }
@@ -955,30 +1021,60 @@ let surveyCache=[];
 async function loadSurveys() {
   const box=document.querySelector('#survey-list'); if(!box)return;
   try{surveyCache=await api('/api/admin/surveys');
-    box.innerHTML=surveyCache.length?surveyCache.map(t=>`<details class="material-item${t.open?'':' retired'}"><summary><span class="resource-category ${t.project_id==='innova'?'plum-chip':'forest-chip'}">${esc(PROJECTS[t.project_id].name)}</span><strong>${esc(t.title)}</strong><span class="status-label">${t.answers} respuestas · ${t.open?'abierta':'cerrada'}</span></summary>
-      <div class="form-grid ticket-body"><p class="helper">${t.kind==='kpsi'?'KPSI':'Percepción'} · ${esc(t.moment)} · código <code>${esc(t.code)}</code></p>
-        <div class="moderation-actions"><button class="button small" type="button" data-survey-qr="${t.id}">Mostrar QR</button><button class="button secondary small" type="button" data-survey-results="${t.id}">Ver resultados</button><a class="button secondary small" href="/api/admin/surveys/${t.id}/responses.csv" download>CSV ↧</a><button class="button secondary small" type="button" data-survey-toggle="${t.id}" data-active="${t.active?0:1}">${t.active?'Cerrar':'Reabrir'}</button></div>
-        <div id="survey-results-${t.id}"></div></div></details>`).join(''):'<p class="helper">Aún no hay encuestas.</p>';
+    box.innerHTML=surveyCache.length?surveyCache.map(t=>{
+      const secs=projectConfig[t.project_id]?.sections||[], kpsiCases=projectConfig[t.project_id]?.kpsi_cases||{};
+      return `<details class="material-item${t.open?'':' retired'}"><summary><span class="resource-category ${t.project_id==='innova'?'plum-chip':'forest-chip'}">${esc(PROJECTS[t.project_id].name)}${t.section?' · '+esc(t.section):''}</span><strong>${esc(t.title)}</strong><span class="status-label">${t.answers} respuestas · ${t.open?'abierta':'cerrada'}</span></summary>
+      <div class="form-grid ticket-body"><p class="helper">${t.kind==='kpsi'?'KPSI':'Percepción'} · ${esc(t.moment)}${t.section?' · solo '+esc(t.section):' · toda la asignatura'} · código <code>${esc(t.code)}</code></p>
+        <div class="moderation-actions"><button class="button small" type="button" data-survey-qr="${t.id}">Mostrar QR</button><button class="button secondary small" type="button" data-survey-results="${t.id}">Ver resultados</button><a class="button secondary small" href="/api/admin/surveys/${t.id}/responses.csv" download>CSV ↧</a><button class="button secondary small" type="button" data-survey-toggle="${t.id}" data-active="${t.active?0:1}">${t.active?'Cerrar':'Reabrir'}</button>${t.answers===0?`<button class="button secondary small" type="button" data-survey-delete="${t.id}">Eliminar</button>`:''}</div>
+        <details class="code-panel"><summary>Editar título, paralelo, plazo${t.answers===0?' o preguntas':''}</summary>
+          <form class="form-grid" data-survey-edit="${t.id}">
+            <div class="code-columns"><div class="field"><label for="sve-title-${t.id}">Título</label><input id="sve-title-${t.id}" name="title" maxlength="120" required value="${esc(t.title)}"></div>
+            ${secs.length?`<div class="field"><label for="sve-sec-${t.id}">Paralelo</label><select id="sve-sec-${t.id}" name="section" class="select"><option value="">Toda la asignatura</option>${secs.map(s=>`<option value="${esc(s)}"${s===t.section?' selected':''}>${esc(s)}</option>`).join('')}</select></div>`:''}
+            <div class="field"><label for="sve-hours-${t.id}">Nuevo plazo (horas desde ahora, opcional)</label><input id="sve-hours-${t.id}" name="hours" type="number" min="1" max="720" placeholder="Sin cambio"></div></div>
+            ${t.answers===0?`<div class="field"><label for="sve-items-${t.id}">Enunciados y casos (sin respuestas aún: se pueden editar)</label><textarea id="sve-items-${t.id}" name="items" rows="8">${esc(t.items_text||'')}</textarea></div>
+              ${t.kind==='kpsi'&&Object.keys(kpsiCases).length?`<div class="moderation-actions">${Object.keys(kpsiCases).map(sec=>`<button class="button secondary small" type="button" data-survey-fill-cases="${esc(sec)}" data-survey-id="${t.id}">Agregar los 7 casos de ${esc(sec)}</button>`).join('')}</div>`:''}`
+              :'<p class="helper">Esta encuesta ya tiene respuestas: nunca se puede eliminar ni cambiar sus preguntas (sí el título, el paralelo y el plazo).</p>'}
+            <div class="moderation-actions"><button class="button small" type="submit">Guardar cambios</button></div>
+          </form>
+        </details>
+        <div id="survey-results-${t.id}"></div></div></details>`;}).join(''):'<p class="helper">Aún no hay encuestas.</p>';
   }catch(ex){box.textContent=ex.message;}
 }
 function bindSurveys() {
-  const project=document.querySelector('#sv-project'), kind=document.querySelector('#sv-kind'), items=document.querySelector('#sv-items');
-  const fill=()=>{items.value=projectConfig[project.value]?.survey_templates?.[kind.value]||'';
-    document.querySelector('#sv-note').textContent=kind.value==='percepcion'?' Plantilla provisional: reemplázala por los ítems del instrumento de Bravo Cofré et al. (2024) cuando lo tengas.':project.value==='incentiva'?' No hay un KPSI de Incentiva en los archivos del curso: revisa estos enunciados antes de aplicarlo.':' Enunciados del KPSI de TEM 1133 (Certamen I).';};
-  project.addEventListener('change',fill); kind.addEventListener('change',fill); fill();
+  const project=document.querySelector('#sv-project'), secWrap=document.querySelector('#sv-section-wrap'), secSelect=document.querySelector('#sv-section'), kind=document.querySelector('#sv-kind'), items=document.querySelector('#sv-items');
+  const syncSections=()=>{const secs=projectConfig[project.value]?.sections||[];secWrap.hidden=!secs.length;
+    secSelect.innerHTML='<option value="">Toda la asignatura</option>'+secs.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');};
+  const fill=()=>{const base=projectConfig[project.value]?.survey_templates?.[kind.value]||'';
+    items.value=kind.value==='kpsi'&&secSelect.value?withSectionCasesText(base,project.value,secSelect.value):base;
+    document.querySelector('#sv-note').textContent=kind.value==='percepcion'?' Plantilla provisional: reemplázala por los ítems del instrumento de Bravo Cofré et al. (2024) cuando lo tengas.':project.value==='incentiva'?(secSelect.value?` Incluye los 7 casos seleccionables de ${secSelect.value}.`:' Elige un paralelo arriba para incluir automáticamente sus 7 casos seleccionables.'):' Enunciados del KPSI de TEM 1133 (Certamen I).';};
+  project.addEventListener('change',()=>{syncSections();fill();}); secSelect.addEventListener('change',fill); kind.addEventListener('change',fill); syncSections(); fill();
   document.querySelector('#survey-form').addEventListener('submit',async e=>{e.preventDefault();const error=document.querySelector('#sv-error');error.textContent='';
-    try{const r=await api('/api/admin/surveys',{method:'POST',body:JSON.stringify({project_id:project.value,kind:kind.value,moment:document.querySelector('#sv-moment').value,title:document.querySelector('#sv-title').value,hours:document.querySelector('#sv-hours').value,items:items.value})});
+    try{const r=await api('/api/admin/surveys',{method:'POST',body:JSON.stringify({project_id:project.value,section:secSelect.value||'',kind:kind.value,moment:document.querySelector('#sv-moment').value,title:document.querySelector('#sv-title').value,hours:document.querySelector('#sv-hours').value,items:items.value})});
       document.querySelector('#sv-title').value='';await loadSurveys();const created=surveyCache.find(t=>t.code===r.code);if(created)showQr({...created,qr:`/api/admin/surveys/${created.id}/qr.svg`,label:'Encuesta'});}
     catch(ex){error.textContent=ex.message;}});
-  document.querySelector('#survey-list').addEventListener('click',async e=>{const qrB=e.target.closest('[data-survey-qr]'), resB=e.target.closest('[data-survey-results]'), toggle=e.target.closest('[data-survey-toggle]');
+  document.querySelector('#survey-list').addEventListener('click',async e=>{
+    const qrB=e.target.closest('[data-survey-qr]'), resB=e.target.closest('[data-survey-results]'), toggle=e.target.closest('[data-survey-toggle]'), delB=e.target.closest('[data-survey-delete]'), casesB=e.target.closest('[data-survey-fill-cases]');
     if(qrB){const t=surveyCache.find(x=>x.id===Number(qrB.dataset.surveyQr));showQr({...t,qr:`/api/admin/surveys/${t.id}/qr.svg`,label:'Encuesta'});}
     if(toggle){try{await api('/api/admin/surveys/update',{method:'POST',body:JSON.stringify({id:Number(toggle.dataset.surveyToggle),active:toggle.dataset.active==='1'})});loadSurveys();}catch(ex){notify(ex.message);}}
+    if(delB){try{const r=await api(`/api/admin/surveys/${delB.dataset.surveyDelete}/delete`,{method:'POST',body:'{}'});notify(r.message);loadSurveys();}catch(ex){notify(ex.message);}}
+    if(casesB){const id=Number(casesB.dataset.surveyId), sec=casesB.dataset.surveyFillCases, t=surveyCache.find(x=>x.id===id);
+      const ta=document.querySelector(`#sve-items-${id}`), sel=document.querySelector(`#sve-sec-${id}`);
+      if(sel)sel.value=sec;
+      if(ta&&t)ta.value=withSectionCasesText(ta.value,t.project_id,sec);}
     if(resB){const box=document.querySelector(`#survey-results-${resB.dataset.surveyResults}`);
       try{const r=await api(`/api/admin/surveys/${resB.dataset.surveyResults}/results`);
         box.innerHTML=`<p class="helper">${r.respondents} respuestas${r.baseline?` · comparada con «${esc(r.baseline.title)}» (${r.baseline.respondents} respuestas)`:''} · escala 1 a ${r.scale.length}</p>
-          <table class="code-table"><thead><tr><th>Enunciado</th><th>Promedio</th>${r.baseline?'<th>Entrada</th><th>Cambio</th>':''}<th>Niveles altos</th></tr></thead><tbody>${r.items.map(i=>`<tr><td>${esc(i.text)}<br><span class="helper">${esc(i.dimension)}</span></td><td><b>${i.mean??'—'}</b></td>${r.baseline?`<td>${i.baseline_mean??'—'}</td><td class="${i.delta>0?'delta-up':i.delta<0?'delta-down':''}">${i.delta===null||i.delta===undefined?'—':(i.delta>0?'+':'')+i.delta}</td>`:''}<td>${i.top_share===null?'—':Math.round(i.top_share*100)+'%'}</td></tr>`).join('')}</tbody></table>
+          <table class="code-table"><thead><tr><th>Enunciado</th><th>Promedio / Selección</th>${r.baseline?'<th>Entrada</th><th>Cambio</th>':''}<th>Niveles altos / %</th></tr></thead><tbody>${r.items.map(i=>i.choice?`<tr><td>${esc(i.text)}<br><span class="helper">${esc(i.dimension||'Caso del equipo')} · caso seleccionable</span></td><td><b>${i.count}</b></td>${r.baseline?'<td>—</td><td>—</td>':''}<td>${i.top_share===null?'—':Math.round(i.top_share*100)+'%'}</td></tr>`:`<tr><td>${esc(i.text)}<br><span class="helper">${esc(i.dimension)}</span></td><td><b>${i.mean??'—'}</b></td>${r.baseline?`<td>${i.baseline_mean??'—'}</td><td class="${i.delta>0?'delta-up':i.delta<0?'delta-down':''}">${i.delta===null||i.delta===undefined?'—':(i.delta>0?'+':'')+i.delta}</td>`:''}<td>${i.top_share===null?'—':Math.round(i.top_share*100)+'%'}</td></tr>`).join('')}</tbody></table>
           ${r.comments.length?`<div class="ticket-question"><strong>Comentarios</strong><ul>${r.comments.map(c=>`<li>${esc(c)}</li>`).join('')}</ul></div>`:''}`;}
       catch(ex){box.textContent=ex.message;}}});
+  document.querySelector('#survey-list').addEventListener('submit',async e=>{
+    const form=e.target.closest('[data-survey-edit]'); if(!form)return;
+    e.preventDefault(); const f=new FormData(form), body={id:Number(form.dataset.surveyEdit),title:f.get('title')};
+    if(form.elements.section) body.section=f.get('section');
+    if(f.get('hours')) body.hours=Number(f.get('hours'));
+    if(form.elements.items) body.items=f.get('items');
+    try{const r=await api('/api/admin/surveys/update',{method:'POST',body:JSON.stringify(body)});notify(r.message);loadSurveys();}
+    catch(ex){notify(ex.message);}});
   loadSurveys();
 }
 function bindIndicators() {
@@ -999,8 +1095,8 @@ function auditPanel() {
 }
 async function loadAudit(offset=0) {
   const box=document.querySelector('#admin-audit-list'); if(!box)return;
-  const labels={sos_login:'Ingreso con código SOS',full_backup_downloaded:'Descarga del respaldo completo',course_code_login:'Ingreso con código del curso',course_code_created:'Creación de código del curso',course_code_disabled:'Desactivación de código del curso',staff_added:'Incorporación al equipo docente',staff_removed:'Retiro del equipo docente',membership_revoked:'Retiro de acceso',person_anonymized:'Anonimización de persona',cohort_anonymized:'Anonimización de cohorte'};
-  const entityNames={join_code:'Código',staff_role:'Rol docente',membership:'Acceso',user:'Cuenta',cohort:'Cohorte',sos:'Ingreso SOS'};
+  const labels={sos_login:'Ingreso con código SOS',full_backup_downloaded:'Descarga del respaldo completo',course_code_login:'Ingreso con código del curso',course_code_created:'Creación de código del curso',course_code_disabled:'Desactivación de código del curso',staff_added:'Incorporación al equipo docente',staff_removed:'Retiro del equipo docente',membership_revoked:'Retiro de acceso',person_anonymized:'Anonimización de persona',cohort_anonymized:'Anonimización de cohorte',entrega_editada:'Edición de entrega',encuesta_eliminada:'Eliminación de encuesta'};
+  const entityNames={join_code:'Código',staff_role:'Rol docente',membership:'Acceso',user:'Cuenta',cohort:'Cohorte',sos:'Ingreso SOS',submission:'Entrega',survey:'Encuesta'};
   const rowMarkup=r=>`<tr><td>${new Date(r.created_at*1000).toLocaleString('es-CL')}</td><td>${esc(labels[r.event_type]||r.event_type)}</td><td>${esc(r.actor_email||'—')}</td><td>${esc(r.subject_email||'—')}</td><td>${esc(PROJECTS[r.project_id]?.name||'—')}</td><td>${esc(entityNames[r.entity_type]||'—')}${r.entity_id?` #${Number(r.entity_id)}`:''}</td><td>${r.ip_hash?`<code title="Huella HMAC de IP con sal">${esc(r.ip_hash.slice(0,16))}…</code>`:'—'}</td></tr>`;
   try{const rows=await api(`/api/admin/audit?offset=${offset}`);
     if(offset===0){box.innerHTML=rows.length?`<div class="audit-scroll"><table class="code-table"><thead><tr><th>Fecha y hora</th><th>Acción</th><th>Realizada por</th><th>Cuenta relacionada</th><th>Asignatura</th><th>Detalle</th><th>Huella de IP</th></tr></thead><tbody>${rows.map(rowMarkup).join('')}</tbody></table></div>${rows.length===500?'<button class="button secondary small" id="audit-more" type="button">Cargar eventos anteriores</button>':''}`:'<p class="helper">Aún no hay eventos dentro de los últimos 180 días.</p>';

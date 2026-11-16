@@ -231,6 +231,27 @@ El uso declarado de IA fue un apoyo y no reemplazó el trabajo del equipo.
 # Valoración general
 Recomendaría esta metodología para otras asignaturas.""" for project in PROJECTS},
 }
+# The 7 territorial cases per paralelo of Incentiva, selectable by the student in each paralelo's KPSI survey.
+KPSI_CASES = {
+    "Bioanálisis": [
+        "Caso 1 (Río Claro): La muestra llega, pero no sirve — Fase preanalítica rural, rechazo de muestras y cadena de frío.",
+        "Caso 2 (Pucalán): Hemogramas que nadie vuelve a mirar — Hematología escolar, anemias y comunicación comprensible.",
+        "Caso 3 (San Benito): El valor crítico que llegó tarde — Notificación trazable de valores críticos en APS (< 60 min).",
+        "Caso 4 (Costa Brava): Un banco de sangre que depende de la emergencia — Fidelización y captación de donantes de sangre voluntarios.",
+        "Caso 5 (Valle Alto): La transfusión correcta, al paciente correcto — Seguridad transfusional, prevención WBIT y hemovigilancia.",
+        "Caso 6 (Cordillera Sur): Diagnóstico molecular lejos del laboratorio — Logística de confirmación molecular (VHC/VHB) en 1 visita.",
+        "Caso 7 (Laguna Verde): Anticoagulados sin control — Control descentralizado de anticoagulación (INR) rural.",
+    ],
+    "Oftalmología": [
+        "Caso 1 (Salsipuedes): Ven la pizarra, pero no la ven bien — Optometría y APS: tamizaje visual escolar y acceso a lentes.",
+        "Caso 2 (Costa Hermosa): La micro pasa antes de que alcance a leerla — Optometría y baja visión: señalética de locomoción colectiva.",
+        "Caso 3 (Valle Hermoso): «Yo veo bien, ¿para qué voy al oculista?» — Optometría y APS: control metabólico, tabaquismo y salud ocular.",
+        "Caso 4 (Puerto Sauce): El glaucoma que no duele y por eso se abandona — Glaucoma y APS: adherencia y seguimiento oportuno.",
+        "Caso 5 (Puerto Claro): Tengo un celular inteligente, pero no sé cómo usarlo para ver mejor — Baja visión y accesibilidad digital.",
+        "Caso 6 (Bahía Esperanza): Escuché que había una emergencia, pero no sabía hacia dónde ir — Discapacidad visual y evacuación accesible.",
+        "Caso 7 (Nueva Esperanza): Conozco el camino de memoria, pero hoy la vereda desapareció — Movilidad, baja visión y desvíos urbanos accesibles.",
+    ],
+}
 # Course cases are simulated (no patient data); their text ships in seeds/ so deploying never needs the course folder.
 CASES_DIR = Path(env("APP_CASES_DIR", ROOT / "Innova en el aula 2S 2026"))
 SEED_CASES = ROOT / "seeds" / "casos_innova.json"
@@ -552,6 +573,26 @@ def init_db():
         CREATE INDEX IF NOT EXISTS rate_events_bucket ON rate_events(bucket, created_at);
         CREATE INDEX IF NOT EXISTS audit_events_entity ON audit_events(entity_type, entity_id, created_at);
         CREATE INDEX IF NOT EXISTS audit_events_created_at ON audit_events(created_at);
+        CREATE TABLE IF NOT EXISTS submission_drafts (
+          id INTEGER PRIMARY KEY,
+          project_id TEXT NOT NULL REFERENCES projects(id),
+          cohort TEXT NOT NULL DEFAULT '',
+          user_id INTEGER NOT NULL REFERENCES users(id),
+          team_name TEXT NOT NULL DEFAULT '',
+          section TEXT NOT NULL DEFAULT '',
+          member_emails TEXT NOT NULL DEFAULT '[]',
+          data TEXT NOT NULL DEFAULT '{}',
+          updated_at INTEGER NOT NULL,
+          submitted_id INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS submission_versions (
+          id INTEGER PRIMARY KEY,
+          submission_id INTEGER NOT NULL,
+          edited_by TEXT NOT NULL DEFAULT '',
+          edited_at INTEGER NOT NULL,
+          snapshot TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS submission_versions_submission ON submission_versions(submission_id, edited_at);
         """)
         rebuilt = ensure_anonymous_tables(db)
         add_missing_columns(db, "submissions", (
@@ -583,6 +624,22 @@ def init_db():
         db.execute("""CREATE UNIQUE INDEX IF NOT EXISTS submissions_open_team_per_cohort ON submissions(project_id, cohort, lower(trim(section)),
           lower(trim(team_name))) WHERE team_name <> '' AND status <> 'rejected'""")
         add_missing_columns(db, "project_memberships", (("section", "TEXT NOT NULL DEFAULT ''"), ("revoked", "INTEGER NOT NULL DEFAULT 0")))
+        # A survey may be meant for one paralelo only; '' keeps the earlier behaviour (whole subject).
+        add_missing_columns(db, "surveys", (("section", "TEXT NOT NULL DEFAULT ''"),))
+        # Upgrade existing Incentiva KPSI surveys: make existing case lines selectable and add Bioanálisis cases when unanswered.
+        for srow in db.execute("SELECT id,title,section,items FROM surveys WHERE project_id='incentiva' AND kind='kpsi'").fetchall():
+            sec = srow["section"]
+            low_title, low_items = srow["title"].lower(), srow["items"].lower()
+            if not sec:
+                if "bioan" in low_title or "río claro" in low_items or "rio claro" in low_items: sec = "Bioanálisis"
+                elif "oftalm" in low_title or "salsipuedes" in low_items or "costa hermosa" in low_items: sec = "Oftalmología"
+            parsed = normalize_survey_items(json.loads(srow["items"] or "[]"))
+            has_answers = bool(db.execute("SELECT 1 FROM survey_answers WHERE survey_id=?", (srow["id"],)).fetchone())
+            if not has_answers and sec in KPSI_CASES and not any(it.get("choice") for it in parsed):
+                parsed = kpsi_items_with_cases(parsed, sec)
+            new_items = json.dumps(parsed, ensure_ascii=False)
+            if sec != srow["section"] or new_items != srow["items"]:
+                db.execute("UPDATE surveys SET section=?,items=? WHERE id=?", (sec, new_items, srow["id"]))
         for slug, p in PROJECTS.items():
             db.execute("""INSERT INTO projects(id,name,course,description,accent)
               VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,
@@ -803,23 +860,65 @@ def peer_summary(rubric, score_sets):
     return {"count": len(score_sets), "averages": averages, "overall": round(sum(known) / len(known), 2) if known else None}
 
 
+def is_choice_item(item):
+    """True when a survey item is one of the selectable team cases rather than a 1–4 rated statement."""
+    return bool(item.get("choice") or re.match(r"^(?:\[\s*[xX✓✔]?\s*\]\s*|[-•*]\s*)?Caso\s+[1-7]\b", str(item.get("text", "")).strip(), re.I))
+
+
+def normalize_survey_items(items):
+    return [{**item, **({"choice": True} if is_choice_item(item) else {})} for item in (items or [])]
+
+
+def kpsi_items_with_cases(items, section):
+    """Replace or append the 7 selectable cases of a paralelo (Bioanálisis or Oftalmología) on a KPSI survey."""
+    cases = KPSI_CASES.get(section)
+    if not cases: return normalize_survey_items(items)
+    kept = [it for it in normalize_survey_items(items) if not it.get("choice")]
+    dim = "Aplicación al expediente territorial asignado a tu equipo"
+    return kept + [{"dimension": dim, "text": c, "choice": True} for c in cases]
+
+
+def survey_items_text(items):
+    """Inverse of parse_survey_items: the editable text of a survey's statements (selectable options start with «- »)."""
+    lines, dimension = [], None
+    for item in normalize_survey_items(items):
+        if item.get("dimension", "") != dimension:
+            dimension = item.get("dimension", "")
+            if dimension: lines.append("# " + dimension)
+        lines.append(("- " if item.get("choice") else "") + item["text"])
+    return "\n".join(lines)
+
+
 def parse_survey_items(text):
     items, dimension = [], ""
     for line in str(text or "").splitlines():
         line = line.strip()
-        if line.startswith("#"): dimension = line.lstrip("#").strip()[:120]
-        elif line: items.append({"dimension": dimension, "text": line[:300]})
-    return items[:40]
+        if line.startswith("#"):
+            dimension = line.lstrip("#").strip()[:120]
+        elif line:
+            choice = re.match(r"^(?:(?:\[\s*[xX✓✔]?\s*\]|[-•*])\s*(.+)|((?:Caso\s+[1-7]\b).*))$", line, re.I)
+            if choice:
+                clean = (choice.group(1) or choice.group(2) or "").strip()[:300]
+                if clean: items.append({"dimension": dimension or "Aplicación al expediente territorial asignado a tu equipo", "text": clean, "choice": True})
+            else:
+                items.append({"dimension": dimension, "text": line[:300]})
+    return items[:50]
 
 
 def survey_results(items, scale, rows):
-    """Per-item mean, distribution and share at the top two levels; rows are lists of 1-based levels."""
+    """Per-item mean, distribution and share at the top two levels; rows are lists of 1-based levels (or 0/1 for selectable cases)."""
     results = []
-    for index, item in enumerate(items):
-        values = [r[index] for r in rows if index < len(r) and isinstance(r[index], int)]
-        results.append({**item, "count": len(values), "mean": round(sum(values) / len(values), 2) if values else None,
-                        "top_share": round(sum(v >= len(scale) - 1 for v in values) / len(values), 2) if values else None,
-                        "distribution": [values.count(level) for level in range(1, len(scale) + 1)]})
+    for index, item in enumerate(normalize_survey_items(items)):
+        if item.get("choice"):
+            selected = sum(1 for r in rows if index < len(r) and r[index] == 1)
+            results.append({**item, "count": selected, "mean": None,
+                            "top_share": round(selected / len(rows), 2) if rows else None,
+                            "distribution": [selected]})
+        else:
+            values = [r[index] for r in rows if index < len(r) and isinstance(r[index], int) and 1 <= r[index] <= len(scale)]
+            results.append({**item, "count": len(values), "mean": round(sum(values) / len(values), 2) if values else None,
+                            "top_share": round(sum(v >= len(scale) - 1 for v in values) / len(values), 2) if values else None,
+                            "distribution": [values.count(level) for level in range(1, len(scale) + 1)]})
     return results
 
 
@@ -910,8 +1009,9 @@ def project_report(db, project, cohort):
     entry_survey = db.execute("SELECT * FROM surveys WHERE project_id=? AND cohort=? AND kind='kpsi' AND moment='entrada' ORDER BY id DESC LIMIT 1", (project, cohort)).fetchone()
     if exit_survey and entry_survey:
         rows_for = lambda sid: [json.loads(r[0]) for r in db.execute("SELECT answer_values FROM survey_answers WHERE survey_id=?", (sid,))]
-        before = {r["text"]: r for r in survey_results(json.loads(entry_survey["items"]), json.loads(entry_survey["scale"]), rows_for(entry_survey["id"]))}
+        before = {r["text"]: r for r in survey_results(json.loads(entry_survey["items"]), json.loads(entry_survey["scale"]), rows_for(entry_survey["id"])) if not r.get("choice")}
         for r in survey_results(json.loads(exit_survey["items"]), json.loads(exit_survey["scale"]), rows_for(exit_survey["id"])):
+            if r.get("choice"): continue
             b = before.get(r["text"])
             kpsi.append({"text": r["text"], "dimension": r["dimension"], "before": b["mean"] if b else None, "after": r["mean"],
                          "before_levels": level_shares(b["distribution"]) if b else {"n": 0, "percent": None},
@@ -955,6 +1055,8 @@ def anonymize_user(db, user_id):
         kept = [(m, e) for m, e in zip(members, emails) if e != user["email"] and m.lower() != user["display_name"].lower()]
         db.execute("UPDATE submissions SET members=?,member_emails=? WHERE id=?",
                    (json.dumps([m for m, _ in kept], ensure_ascii=False), json.dumps([e for _, e in kept]), row["id"]))
+    db.execute("DELETE FROM submission_drafts WHERE user_id=?", (user_id,))
+    db.execute("DELETE FROM submission_versions WHERE submission_id NOT IN (SELECT id FROM submissions)")
     db.execute("DELETE FROM comments WHERE parent_id IN (SELECT id FROM comments WHERE user_id=?)", (user_id,))
     for table, column in (("sessions", "user_id"), ("project_memberships", "user_id"), ("comments", "user_id"), ("peer_reviews", "reviewer_id"),
                           ("quiz_attempts", "user_id"), ("exit_ticket_respondents", "user_id"), ("survey_respondents", "user_id")):
@@ -975,6 +1077,7 @@ def person_export(db, email):
     return {"cuenta": dict(user),
             "asignaturas": rows("SELECT project_id,status,section,requested_at,reviewed_at FROM project_memberships WHERE user_id=?"),
             "entregas": rows("SELECT project_id,team_name,section,members,title,summary,video_url,evidence_url,evidence_filename,project_fields,ai_declaration,status,review_note,created_at FROM submissions WHERE user_id=?"),
+            "borradores_de_entrega": rows("SELECT project_id,team_name,section,data,updated_at FROM submission_drafts WHERE user_id=?"),
             "comentarios": rows("SELECT c.body,c.status,c.created_at,r.title recurso FROM comments c JOIN resources r ON r.id=c.resource_id WHERE c.user_id=?"),
             "coevaluaciones": rows("SELECT r.title recurso,p.scores,p.strength,p.suggestion,p.updated_at FROM peer_reviews p JOIN resources r ON r.id=p.resource_id WHERE p.reviewer_id=?"),
             "preguntas_de_control": rows("SELECT r.title recurso,q.answers,q.score,q.created_at FROM quiz_attempts q JOIN resources r ON r.id=q.resource_id WHERE q.user_id=?"),
@@ -1057,6 +1160,9 @@ def close_cohort(db):
     for user_id in students: files += anonymize_user(db, user_id)
     # Member names were typed by the team and cannot always be matched to an account, so they all go.
     db.execute("UPDATE submissions SET members='[]',member_emails='[]'")
+    # Drafts and earlier versions of a delivery also carry the names typed by the team.
+    db.execute("DELETE FROM submission_drafts")
+    db.execute("DELETE FROM submission_versions")
     db.execute("UPDATE join_codes SET active=0")
     db.execute("UPDATE exit_tickets SET active=0")
     db.execute("UPDATE surveys SET active=0")
@@ -1258,6 +1364,84 @@ def smtp_check():
         return True, f"{SMTP_HOST}:{SMTP_PORT}"
     except Exception as error:
         return False, f"{type(error).__name__}: {error}"
+
+
+def read_submission(project, payload):
+    """Validate the text part of a team delivery (everything except the files); returns (fields, error)."""
+    title = str(payload.get("title", "")).strip()[:180]
+    team_name = str(payload.get("team_name", "")).strip()[:160]
+    summary = str(payload.get("summary", "")).strip()[:5000]
+    if not title or not team_name or not summary: return None, "Completa equipo, título y resumen."
+    section = str(payload.get("section", "")).strip()
+    if PROJECT_SECTIONS[project] and section not in PROJECT_SECTIONS[project]: return None, "Indica el paralelo del equipo."
+    if not PROJECT_SECTIONS[project]: section = ""
+    members, member_emails = clean_members(payload.get("members", ""))
+    if not members: return None, "Indica quiénes integran el equipo (un nombre por línea)."
+    project_fields, fields_error = clean_project_fields(project, payload.get("project_fields", {}))
+    if fields_error: return None, fields_error
+    alternatives, alternatives_error = clean_alternatives(payload.get("alternatives") if project == "incentiva" else None)
+    if alternatives_error: return None, alternatives_error
+    video_url = str(payload.get("video_url", "")).strip()[:1000]
+    evidence_url = str(payload.get("evidence_url", "")).strip()[:1000]
+    # The evidence sheet is generated from the form; a separate file or folder is optional.
+    if not video_url: return None, "Incluye el enlace al único video final."
+    for url in (video_url, evidence_url):
+        if url:
+            parsed_url = urllib.parse.urlparse(url)
+            if parsed_url.scheme != "https" or not parsed_url.netloc or parsed_url.username or parsed_url.password:
+                return None, "Los enlaces deben comenzar con https://"
+    # This records a content-rights/safe-media declaration, not consent to future or public use.
+    if not payload.get("consent_confirmed"):
+        return None, "Confirma que las imágenes, voces y recursos identificables tienen autorización o que el video evita identificarlos."
+    if not payload.get("video_length_confirmed"):
+        return None, "Confirma que el enlace corresponde al video final único de máximo cinco minutos."
+    return {"title": title, "team_name": team_name, "summary": summary, "section": section, "members": members,
+            "member_emails": member_emails, "project_fields": project_fields, "alternatives": alternatives, "video_url": video_url,
+            "evidence_url": evidence_url, "ai_declaration": str(payload.get("ai_declaration", ""))[:2000],
+            "has_subtitles": int(bool(payload.get("has_subtitles"))), "showcase_consent": int(bool(payload.get("showcase_consent")))}, ""
+
+
+def read_submission_files(project, payload):
+    """Optional attachments of a delivery: ((evidence bytes, name, key), (model bytes, name, key)); raises UploadError."""
+    evidence = (b"", "", "")
+    if payload.get("evidence_file_base64"):
+        data, name = decode_upload(payload["evidence_file_base64"], payload.get("evidence_filename", "ficha"), "La ficha")
+        evidence = (data, name, secrets.token_hex(20))
+    model = (b"", "", "")
+    if project == "innova" and payload.get("model_file_base64"):
+        model_b64 = payload["model_file_base64"]
+        if not isinstance(model_b64, str) or len(model_b64) > 11_184_812: raise UploadError("El modelo 3D debe pesar como máximo 8 MB.", 413)
+        try: data = base64.b64decode(model_b64, validate=True)
+        except (binascii.Error, ValueError): raise UploadError("No pudimos leer el modelo 3D.", 400)
+        name = Path(str(payload.get("model_filename", "modelo.stl"))[:180].replace("\\", "/")).name
+        if not name.lower().endswith(".stl") or not valid_stl(data): raise UploadError("El modelo 3D debe ser un archivo STL válido.", 400)
+        model = (data, name, secrets.token_hex(20))
+    return evidence, model
+
+
+def published_copy(project, row):
+    """Catalog text of a published delivery: (category, content, tags), built from the submission row."""
+    fields = json.loads(row["project_fields"] or "{}")
+    # Plain-text copy keeps the record readable and searchable; the detail page shows the structured fields.
+    lines = [f"{f['label']}: {f['value']}" for f in labeled_fields(project, fields)]
+    if row["ai_declaration"]: lines.append("Declaración de IA: " + row["ai_declaration"])
+    category = "Cápsula educativa" if project == "innova" else "Video-prototipo"
+    tag_keys = ("process", "technique") if project == "innova" else ("challenge",)
+    tags = [str(fields[k])[:50] for k in tag_keys if fields.get(k)] + ([row["section"]] if row["section"] else [])
+    return category, "\n\n".join(lines), tags
+
+
+def team_can_edit(user, row):
+    """The person who sent the delivery and every member listed with an address act as its authors."""
+    return row["user_id"] == user["id"] or user["email"] in json.loads(row["member_emails"] or "[]")
+
+
+def survey_visible(db, user, survey, staff=False):
+    """A survey for one paralelo is shown to that paralelo; people whose paralelo is unknown still see it."""
+    if staff or not survey["section"]: return True
+    row = db.execute("SELECT section FROM project_memberships WHERE user_id=? AND project_id=? AND status='active'",
+                     (user["id"], survey["project_id"])).fetchone()
+    return not row or not row["section"] or row["section"] == survey["section"]
 
 
 def notify_later(recipients, subject, body):
@@ -1503,6 +1687,7 @@ class App(BaseHTTPRequestHandler):
             config = {p: {"sections": PROJECT_SECTIONS[p], "fields": PROJECT_FIELDS[p], "open": p in OPEN_PROJECTS,
                           "guide_question": GUIDE_QUESTIONS[p], "ticket_questions": EXIT_TICKET_QUESTIONS[p],
                           "survey_templates": {kind: SURVEY_TEMPLATES[kind][p] for kind in SURVEY_TEMPLATES},
+                          "kpsi_cases": KPSI_CASES if p == "incentiva" else {},
                           "pre_questions": PRE_SESSION_QUESTIONS[p], "alternative_criteria": ALTERNATIVE_CRITERIA if p == "incentiva" else []} for p in PROJECTS}
             with connect() as db: cohort_now = current_cohort(db)
             return self.json({"user": user, "demo": DEMO_AUTH, "email_ready": email_ready, "google_ready": google_ready(),
@@ -1522,9 +1707,23 @@ class App(BaseHTTPRequestHandler):
             project = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("project", [""])[0]
             if not self.has_project_access(user, project): return self.json({"error":"No tienes acceso a esta asignatura."},403)
             with connect() as db:
-                rows = db.execute("""SELECT id,team_name,section,title,status,review_note,created_at,reviewed_at FROM submissions
-                  WHERE project_id=? AND user_id=? ORDER BY id DESC""", (project, user["id"])).fetchall()
-            return self.json([dict(r) for r in rows])
+                # Members listed with their address see (and may edit) the delivery sent by a teammate.
+                rows = [r for r in db.execute("""SELECT id,user_id,member_emails,team_name,section,title,status,review_note,created_at,reviewed_at
+                  FROM submissions WHERE project_id=? ORDER BY id DESC""", (project,)).fetchall() if team_can_edit(user, r)]
+            return self.json([{k: r[k] for k in ("id", "team_name", "section", "title", "status", "review_note", "created_at", "reviewed_at")}
+                              | {"can_edit": r["status"] != "rejected"} for r in rows])
+        if path == "/api/submission-drafts":
+            user = self.require_user()
+            if not user: return
+            project = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("project", [""])[0]
+            if not self.has_project_access(user, project): return self.json({"error":"No tienes acceso a esta asignatura."},403)
+            with connect() as db:
+                drafts = db.execute("""SELECT d.*,u.display_name author,u.email author_email FROM submission_drafts d JOIN users u ON u.id=d.user_id
+                  WHERE d.project_id=? AND d.cohort=? AND d.submitted_id IS NULL ORDER BY d.updated_at DESC""", (project, current_cohort(db))).fetchall()
+            # A teammate listed by address sees the draft too, so the team can keep working on any computer.
+            mine = next((d for d in drafts if d["user_id"] == user["id"] or user["email"] in json.loads(d["member_emails"] or "[]")), None)
+            return self.json({"draft": {"data": json.loads(mine["data"]), "updated_at": mine["updated_at"], "author": mine["author"],
+                                        "own": mine["user_id"] == user["id"]} if mine else None})
         if path == "/api/admin/join-codes":
             user = self.require_user()
             if not user: return
@@ -1826,10 +2025,11 @@ class App(BaseHTTPRequestHandler):
             if not managed: return self.json({"error": "No tienes permiso para gestionar encuestas."}, 403)
             placeholders = ",".join("?" for _ in managed)
             with connect() as db:
-                rows = db.execute("""SELECT s.id,s.project_id,s.code,s.kind,s.moment,s.title,s.closes_at,s.active,
+                rows = db.execute("""SELECT s.id,s.project_id,s.code,s.kind,s.moment,s.title,s.closes_at,s.active,s.section,s.items,
                   (SELECT COUNT(*) FROM survey_answers a WHERE a.survey_id=s.id) answers
                   FROM surveys s WHERE s.project_id IN (""" + placeholders + ") ORDER BY s.id DESC LIMIT 60", managed).fetchall()
-            return self.json([{**dict(r), "url": f"{BASE_URL}/encuesta/{r['code']}", "open": bool(r["active"] and r["closes_at"] > time.time())} for r in rows])
+            return self.json([{**dict(r), "url": f"{BASE_URL}/encuesta/{r['code']}", "open": bool(r["active"] and r["closes_at"] > time.time()),
+                               "items_text": survey_items_text(json.loads(r["items"]))} for r in rows])
         survey_admin = re.fullmatch(r"/api/admin/surveys/(\d+)/(results|responses\.csv|qr\.svg)", path)
         if survey_admin:
             user = self.require_user()
@@ -1838,11 +2038,11 @@ class App(BaseHTTPRequestHandler):
                 survey = db.execute("SELECT * FROM surveys WHERE id=?", (int(survey_admin.group(1)),)).fetchone()
                 if not survey or survey["project_id"] not in self.managed_projects(user): return self.json({"error": "No tienes permiso para esta encuesta."}, 403)
                 answers = db.execute("SELECT answer_values,comment FROM survey_answers WHERE survey_id=? ORDER BY answered_on,id", (survey["id"],)).fetchall()
-                # An exit (salida/cierre) survey is compared with the latest entry survey of the same kind in the course.
+                # An exit (salida/cierre) survey is compared with the latest entry survey of the same kind (and paralelo, when set).
                 baseline = None if survey["moment"] == "entrada" else db.execute("""SELECT * FROM surveys WHERE project_id=? AND kind=? AND moment='entrada'
-                  AND id<>? ORDER BY id DESC LIMIT 1""", (survey["project_id"], survey["kind"], survey["id"])).fetchone()
+                  AND id<>? ORDER BY (section=?) DESC, id DESC LIMIT 1""", (survey["project_id"], survey["kind"], survey["id"], survey["section"])).fetchone()
                 baseline_rows = [json.loads(r[0]) for r in db.execute("SELECT answer_values FROM survey_answers WHERE survey_id=?", (baseline["id"],))] if baseline else []
-            items, scale = json.loads(survey["items"]), json.loads(survey["scale"])
+            items, scale = normalize_survey_items(json.loads(survey["items"])), json.loads(survey["scale"])
             values = [json.loads(a["answer_values"]) for a in answers]
             if survey_admin.group(2) == "qr.svg":
                 return self.send_bytes(qr.svg(f"{BASE_URL}/encuesta/{survey['code']}").encode(), "image/svg+xml")
@@ -1856,7 +2056,8 @@ class App(BaseHTTPRequestHandler):
                     previous = before.get(r["text"])
                     r["baseline_mean"] = previous["mean"] if previous else None
                     r["delta"] = round(r["mean"] - previous["mean"], 2) if previous and r["mean"] is not None and previous["mean"] is not None else None
-            return self.json({"title": survey["title"], "kind": survey["kind"], "moment": survey["moment"], "scale": scale, "respondents": len(values),
+            return self.json({"title": survey["title"], "kind": survey["kind"], "moment": survey["moment"], "section": survey["section"],
+                              "scale": scale, "respondents": len(values),
                               "baseline": {"title": baseline["title"], "respondents": len(baseline_rows)} if baseline else None,
                               "items": results, "comments": [a["comment"] for a in answers if a["comment"]]})
         survey_path = re.fullmatch(r"/api/surveys/([A-Za-z0-9-]{4,12})", path)
@@ -1865,11 +2066,13 @@ class App(BaseHTTPRequestHandler):
             if not user: return
             with connect() as db:
                 survey = db.execute("SELECT * FROM surveys WHERE code=?", (normalize_code(survey_path.group(1)),)).fetchone()
-                if not survey or not self.has_project_access(user, survey["project_id"]):
+                staff = bool(survey) and survey["project_id"] in self.managed_projects(user)
+                if not survey or not self.has_project_access(user, survey["project_id"]) or not survey_visible(db, user, survey, staff):
                     return self.json({"error": "Esta encuesta no existe o no pertenece a tus asignaturas."}, 404)
                 answered = bool(db.execute("SELECT 1 FROM survey_respondents WHERE survey_id=? AND user_id=?", (survey["id"], user["id"])).fetchone())
             return self.json({"code": survey["code"], "project_id": survey["project_id"], "title": survey["title"], "kind": survey["kind"],
-                              "items": json.loads(survey["items"]), "scale": json.loads(survey["scale"]), "answered": answered,
+                              "section": survey["section"], "items": normalize_survey_items(json.loads(survey["items"])),
+                              "scale": json.loads(survey["scale"]), "answered": answered,
                               "open": bool(survey["active"] and survey["closes_at"] > time.time())})
         if path == "/api/my-surveys":
             user = self.require_user()
@@ -1877,9 +2080,11 @@ class App(BaseHTTPRequestHandler):
             project = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("project", [""])[0]
             if not self.has_project_access(user, project): return self.json({"error": "No tienes acceso a esta asignatura."}, 403)
             with connect() as db:
-                rows = db.execute("""SELECT s.code,s.title,s.kind,s.closes_at,s.active,
+                staff = project in self.managed_projects(user)
+                rows = [r for r in db.execute("""SELECT s.code,s.title,s.kind,s.closes_at,s.active,s.section,s.project_id,
                   EXISTS(SELECT 1 FROM survey_respondents r WHERE r.survey_id=s.id AND r.user_id=?) answered
                   FROM surveys s WHERE s.project_id=? ORDER BY s.id DESC LIMIT 30""", (user["id"], project)).fetchall()
+                        if survey_visible(db, user, r, staff)]
             return self.json([{**dict(r), "answered": bool(r["answered"]), "open": bool(r["active"] and r["closes_at"] > time.time())} for r in rows])
         if path == "/api/admin/person":
             user = self.require_user()
@@ -1974,6 +2179,22 @@ class App(BaseHTTPRequestHandler):
                 if not member: item.update(has_file=0, file_filename="", quiz_count=0, comment_count=0, has_model=0, has_evidence=0)
                 result.append(item)
             return self.json(result)
+        submission_edit = re.fullmatch(r"/api/submissions/(\d+)/edit", path)
+        if submission_edit:
+            user = self.require_user()
+            if not user: return
+            with connect() as db:
+                row = db.execute("SELECT * FROM submissions WHERE id=?", (int(submission_edit.group(1)),)).fetchone()
+            if not row or not self.has_project_access(user, row["project_id"]) or not team_can_edit(user, row):
+                return self.json({"error": "Solo el equipo autor puede editar esta entrega."}, 403)
+            members, emails = json.loads(row["members"] or "[]"), json.loads(row["member_emails"] or "[]")
+            emails += [""] * (len(members) - len(emails))
+            return self.json({"id": row["id"], "project_id": row["project_id"], "status": row["status"], "team_name": row["team_name"],
+                              "section": row["section"], "members": "\n".join(f"{m} {e}".strip() for m, e in zip(members, emails)),
+                              "title": row["title"], "summary": row["summary"], "video_url": row["video_url"] or "", "evidence_url": row["evidence_url"] or "",
+                              "ai_declaration": row["ai_declaration"], "has_subtitles": bool(row["has_subtitles"]), "showcase_consent": bool(row["showcase_consent"]),
+                              "project_fields": json.loads(row["project_fields"] or "{}"), "alternatives": json.loads(row["alternatives"] or "{}"),
+                              "evidence_filename": row["evidence_filename"], "model_filename": row["model_filename"]})
         submission_file = re.fullmatch(r"/api/submissions/(\d+)/(evidence|model|ficha)", path)
         if submission_file:
             user = self.require_user()
@@ -2044,7 +2265,8 @@ class App(BaseHTTPRequestHandler):
             content_length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             return self.json({"error":"Solicitud inválida."},400)
-        limit = (24 if path == "/api/submissions" else 12) * 1024 * 1024 if path in ("/api/submissions","/api/admin/resources","/api/admin/resources/update") else 100_000
+        delivery = path == "/api/submissions" or re.fullmatch(r"/api/submissions/\d+/update", path)
+        limit = (24 if delivery else 12) * 1024 * 1024 if delivery or path in ("/api/admin/resources","/api/admin/resources/update") else 100_000
         if content_length < 0 or content_length > limit:
             return self.json({"error":"La solicitud supera el tamaño permitido."},413)
         length = content_length
@@ -2318,55 +2540,16 @@ class App(BaseHTTPRequestHandler):
             project = str(payload.get("project_id", ""))
             if project not in PROJECTS: return self.json({"error": "Proyecto inválido."}, 400)
             if not self.has_project_access(user, project): return self.json({"error":"No tienes acceso a esta asignatura."},403)
-            title = str(payload.get("title", "")).strip()[:180]
-            team_name = str(payload.get("team_name", "")).strip()[:160]
-            summary = str(payload.get("summary", "")).strip()[:5000]
-            if not title or not team_name or not summary: return self.json({"error": "Completa equipo, título y resumen."}, 400)
-            section = str(payload.get("section", "")).strip()
-            if PROJECT_SECTIONS[project] and section not in PROJECT_SECTIONS[project]: return self.json({"error": "Indica el paralelo del equipo."}, 400)
-            if not PROJECT_SECTIONS[project]: section = ""
-            members, member_emails = clean_members(payload.get("members", ""))
-            if not members: return self.json({"error": "Indica quiénes integran el equipo (un nombre por línea)."}, 400)
-            project_fields, fields_error = clean_project_fields(project, payload.get("project_fields", {}))
-            if fields_error: return self.json({"error": fields_error}, 400)
-            alternatives, alternatives_error = clean_alternatives(payload.get("alternatives") if project == "incentiva" else None)
-            if alternatives_error: return self.json({"error": alternatives_error}, 400)
-            video_url = str(payload.get("video_url", "")).strip()[:1000]
-            evidence_url = str(payload.get("evidence_url", "")).strip()[:1000]
-            upload_key = ""
-            upload_filename = ""
-            upload_bytes = b""
-            file_b64 = payload.get("evidence_file_base64", "")
-            if file_b64:
-                try: upload_bytes, upload_filename = decode_upload(file_b64, payload.get("evidence_filename", "ficha"), "La ficha")
-                except UploadError as error: return self.json({"error": str(error)}, error.status)
-                upload_key=secrets.token_hex(20)
-            model_key, model_name, model_bytes = "", "", b""
-            if project == "innova" and payload.get("model_file_base64"):
-                model_b64 = payload["model_file_base64"]
-                if not isinstance(model_b64, str) or len(model_b64) > 11_184_812: return self.json({"error": "El modelo 3D debe pesar como máximo 8 MB."}, 413)
-                try: model_bytes = base64.b64decode(model_b64, validate=True)
-                except (binascii.Error, ValueError): return self.json({"error": "No pudimos leer el modelo 3D."}, 400)
-                model_name = Path(str(payload.get("model_filename", "modelo.stl"))[:180].replace("\\", "/")).name
-                if not model_name.lower().endswith(".stl") or not valid_stl(model_bytes): return self.json({"error": "El modelo 3D debe ser un archivo STL válido."}, 400)
-                model_key = secrets.token_hex(20)
-            # The evidence sheet is generated from the form; a separate file or folder is optional.
-            if not video_url: return self.json({"error": "Incluye el enlace al único video final."}, 400)
-            for url in (video_url, evidence_url):
-                if url:
-                    parsed_url = urllib.parse.urlparse(url)
-                    if parsed_url.scheme != "https" or not parsed_url.netloc or parsed_url.username or parsed_url.password:
-                        return self.json({"error": "Los enlaces deben comenzar con https://"}, 400)
-            # This records a content-rights/safe-media declaration, not consent to future or public use.
-            consent = int(bool(payload.get("consent_confirmed")))
-            if not consent: return self.json({"error": "Confirma que las imágenes, voces y recursos identificables tienen autorización o que el video evita identificarlos."}, 400)
-            if not payload.get("video_length_confirmed"):
-                return self.json({"error":"Confirma que el enlace corresponde al video final único de máximo cinco minutos."},400)
+            data, error = read_submission(project, payload)
+            if error: return self.json({"error": error}, 400)
+            try: (upload_bytes, upload_filename, upload_key), (model_bytes, model_name, model_key) = read_submission_files(project, payload)
+            except UploadError as error: return self.json({"error": str(error)}, error.status)
+            section, team_name = data["section"], data["team_name"]
             with connect() as db:
                 cohort = current_cohort(db)
                 existing=db.execute("""SELECT 1 FROM submissions WHERE project_id=? AND cohort=? AND lower(trim(section))=lower(trim(?))
                   AND lower(trim(team_name))=lower(trim(?)) AND status<>'rejected'""", (project,cohort,section,team_name)).fetchone()
-                if existing: return self.json({"error":"Este equipo ya registró su entrega final. Contacten a la docente para reemplazarla si corresponde."},409)
+                if existing: return self.json({"error":"Este equipo ya registró su entrega final. Ábranla en «Tus entregas» y usen «Editar» para corregirla."},409)
                 UPLOAD_DIR.mkdir(parents=True,exist_ok=True)
                 if upload_key: (UPLOAD_DIR/upload_key).write_bytes(upload_bytes)
                 if model_key: (UPLOAD_DIR/model_key).write_bytes(model_bytes)
@@ -2375,16 +2558,105 @@ class App(BaseHTTPRequestHandler):
                       evidence_storage_key,evidence_filename,project_fields,ai_declaration,consent_confirmed,has_subtitles,showcase_consent,
                       cohort,alternatives,model_storage_key,model_filename)
                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                      (project, user["id"], team_name, section, json.dumps(members, ensure_ascii=False), json.dumps(member_emails), title, summary,
-                       video_url, evidence_url, upload_key,upload_filename,json.dumps(project_fields, ensure_ascii=False),
-                       str(payload.get("ai_declaration", ""))[:2000],consent,int(bool(payload.get("has_subtitles"))),int(bool(payload.get("showcase_consent"))),
-                       cohort, json.dumps(alternatives, ensure_ascii=False), model_key, model_name))
+                      (project, user["id"], team_name, section, json.dumps(data["members"], ensure_ascii=False), json.dumps(data["member_emails"]),
+                       data["title"], data["summary"], data["video_url"], data["evidence_url"], upload_key, upload_filename,
+                       json.dumps(data["project_fields"], ensure_ascii=False), data["ai_declaration"], 1, data["has_subtitles"],
+                       data["showcase_consent"], cohort, json.dumps(data["alternatives"], ensure_ascii=False), model_key, model_name))
                 except sqlite3.IntegrityError:
                     for key in (upload_key, model_key):
                         if key: (UPLOAD_DIR/key).unlink(missing_ok=True)
                     return self.json({"error":"Este equipo ya registró una entrega final."},409)
+                # The saved draft of this person, or of the same team, is kept but marked as sent.
+                db.execute("""UPDATE submission_drafts SET submitted_id=? WHERE project_id=? AND cohort=? AND submitted_id IS NULL
+                  AND (user_id=? OR member_emails LIKE ? OR (lower(trim(team_name))=lower(trim(?)) AND lower(trim(section))=lower(trim(?))))""",
+                  (cur.lastrowid, project, cohort, user["id"], f'%"{user["email"]}"%', team_name, section))
                 notify_teachers(db, project, force=True)
             return self.json({"ok": True, "id": cur.lastrowid, "message": "Entrega recibida para revisión. Ya puedes descargar la ficha de evidencia generada."}, 201)
+        if path == "/api/submission-drafts":
+            user = self.require_user()
+            if not user: return
+            project = str(payload.get("project_id", ""))
+            if not self.has_project_access(user, project): return self.json({"error": "No tienes acceso a esta asignatura."}, 403)
+            raw = payload.get("data")
+            if not isinstance(raw, dict): return self.json({"error": "No pudimos leer el borrador."}, 400)
+            # Only text is kept: files are chosen again when the team sends the delivery.
+            data = {str(k)[:40]: str(v)[:5000] for k, v in list(raw.items())[:120] if isinstance(v, (str, int, float, bool))}
+            _, member_emails = clean_members(data.get("members", ""))
+            team_name, section = data.get("team_name", "").strip()[:160], data.get("section", "").strip()[:60]
+            now = int(time.time())
+            with connect() as db:
+                cohort = current_cohort(db)
+                drafts = db.execute("""SELECT id,user_id,member_emails FROM submission_drafts WHERE project_id=? AND cohort=? AND submitted_id IS NULL
+                  ORDER BY updated_at DESC""", (project, cohort)).fetchall()
+                row = next((d for d in drafts if d["user_id"] == user["id"] or user["email"] in json.loads(d["member_emails"] or "[]")), None)
+                shared = sorted({e for e in ([user["email"]] + member_emails + (json.loads(row["member_emails"] or "[]") if row else [])) if e})
+                values = (team_name, section, json.dumps(shared), json.dumps(data, ensure_ascii=False), now, user["id"])
+                if row: db.execute("UPDATE submission_drafts SET team_name=?,section=?,member_emails=?,data=?,updated_at=?,user_id=? WHERE id=?", values + (row["id"],))
+                else: db.execute("""INSERT INTO submission_drafts(team_name,section,member_emails,data,updated_at,user_id,project_id,cohort)
+                  VALUES(?,?,?,?,?,?,?,?)""", values + (project, cohort))
+            return self.json({"ok": True, "saved_at": now, "message": "Borrador guardado. Todavía no se envía: cuando esté listo, pulsen «Enviar a revisión»."})
+        submission_update = re.fullmatch(r"/api/submissions/(\d+)/update", path)
+        if submission_update:
+            user = self.require_user()
+            if not user: return
+            item_id = int(submission_update.group(1))
+            with connect() as db:
+                row = db.execute("SELECT * FROM submissions WHERE id=?", (item_id,)).fetchone()
+            if not row: return self.json({"error": "Entrega no encontrada."}, 404)
+            project = row["project_id"]
+            if not self.has_project_access(user, project) or not team_can_edit(user, row):
+                return self.json({"error": "Solo el equipo autor puede editar esta entrega."}, 403)
+            if row["status"] == "rejected": return self.json({"error": "Esta entrega fue devuelta: envíen la versión corregida desde el formulario."}, 409)
+            data, error = read_submission(project, payload)
+            if error: return self.json({"error": error}, 400)
+            try: (upload_bytes, upload_filename, upload_key), (model_bytes, model_name, model_key) = read_submission_files(project, payload)
+            except UploadError as error: return self.json({"error": str(error)}, error.status)
+            with connect() as db:
+                resource = db.execute("SELECT * FROM resources WHERE source_submission_id=?", (item_id,)).fetchone()
+                clash = db.execute("""SELECT 1 FROM submissions WHERE id<>? AND project_id=? AND cohort=? AND status<>'rejected'
+                  AND lower(trim(section))=lower(trim(?)) AND lower(trim(team_name))=lower(trim(?))""",
+                  (item_id, project, row["cohort"], data["section"], data["team_name"])).fetchone()
+                if clash: return self.json({"error": "Ya hay otro equipo con ese nombre en el mismo paralelo."}, 409)
+                # The version before the edit is kept whole, so nothing the team sent is lost.
+                db.execute("INSERT INTO submission_versions(submission_id,edited_by,edited_at,snapshot) VALUES(?,?,?,?)",
+                           (item_id, user["email"], int(time.time()),
+                            json.dumps({"submission": dict(row), "resource": dict(resource) if resource else None}, ensure_ascii=False, default=str)))
+                UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+                if upload_key: (UPLOAD_DIR/upload_key).write_bytes(upload_bytes)
+                if model_key: (UPLOAD_DIR/model_key).write_bytes(model_bytes)
+                db.execute("""UPDATE submissions SET team_name=?,section=?,members=?,member_emails=?,title=?,summary=?,video_url=?,evidence_url=?,
+                  project_fields=?,ai_declaration=?,has_subtitles=?,showcase_consent=?,alternatives=?,
+                  evidence_storage_key=?,evidence_filename=?,model_storage_key=?,model_filename=? WHERE id=?""",
+                  (data["team_name"], data["section"], json.dumps(data["members"], ensure_ascii=False), json.dumps(data["member_emails"]),
+                   data["title"], data["summary"], data["video_url"], data["evidence_url"], json.dumps(data["project_fields"], ensure_ascii=False),
+                   data["ai_declaration"], data["has_subtitles"], data["showcase_consent"], json.dumps(data["alternatives"], ensure_ascii=False),
+                   upload_key or row["evidence_storage_key"], upload_filename if upload_key else row["evidence_filename"],
+                   model_key or row["model_storage_key"], model_name if model_key else row["model_filename"], item_id))
+                if resource:
+                    updated = db.execute("SELECT * FROM submissions WHERE id=?", (item_id,)).fetchone()
+                    _, content, tags = published_copy(project, updated)
+                    db.execute("UPDATE resources SET title=?,summary=?,content=?,tags=?,media_url=? WHERE id=?",
+                               (data["title"], data["summary"], content, json.dumps(tags, ensure_ascii=False), data["video_url"], resource["id"]))
+                record_audit_event(db, "entrega_editada", actor_email=user["email"], project_id=project, entity_type="submission", entity_id=item_id)
+                teachers = project_teachers(db, project)
+            notify_later(teachers, f"El equipo {data['team_name']} editó su entrega",
+                         f"El equipo {data['team_name']} ({PROJECTS[project]['name']}) actualizó «{data['title']}».\n"
+                         f"La versión anterior quedó guardada. Puedes revisarla en el panel:\n{BASE_URL}/admin\n")
+            return self.json({"ok": True, "message": "Cambios guardados. La versión anterior quedó respaldada"
+                              + (" y la ficha publicada ya muestra los cambios." if resource else ".")})
+        survey_delete = re.fullmatch(r"/api/admin/surveys/(\d+)/delete", path)
+        if survey_delete:
+            user = self.require_user()
+            if not user: return
+            with connect() as db:
+                row = db.execute("SELECT id,project_id,code FROM surveys WHERE id=?", (int(survey_delete.group(1)),)).fetchone()
+                if not row or row["project_id"] not in self.managed_projects(user): return self.json({"error": "No tienes permiso para esta encuesta."}, 403)
+                # Answers are never deleted from the panel: a survey that already has them can only be closed.
+                if db.execute("SELECT 1 FROM survey_answers WHERE survey_id=?", (row["id"],)).fetchone():
+                    return self.json({"error": "Esta encuesta ya tiene respuestas: no se puede eliminar. Puedes cerrarla."}, 409)
+                db.execute("DELETE FROM surveys WHERE id=?", (row["id"],))
+                record_audit_event(db, "encuesta_eliminada", actor_email=user["email"], project_id=row["project_id"], entity_type="survey", entity_id=row["id"])
+            return self.json({"ok": True, "message": "Encuesta eliminada (no tenía respuestas)."})
         if path == "/api/admin/tickets":
             user = self.require_user()
             if not user: return
@@ -2575,7 +2847,11 @@ class App(BaseHTTPRequestHandler):
             if project not in self.managed_projects(user): return self.json({"error": "No tienes permiso para esta asignatura."}, 403)
             if kind not in SURVEY_TEMPLATES or moment not in ("entrada", "salida", "cierre"): return self.json({"error": "Elige el tipo y el momento de la encuesta."}, 400)
             title = str(payload.get("title", "")).strip()[:120] or f"{'KPSI' if kind == 'kpsi' else 'Percepción'} · {moment}"
+            section = str(payload.get("section", "")).strip()
+            if section and section not in PROJECT_SECTIONS[project]: return self.json({"error": "Elige un paralelo válido."}, 400)
             items = parse_survey_items(payload.get("items") or SURVEY_TEMPLATES[kind][project])
+            if kind == "kpsi" and project == "incentiva" and section in KPSI_CASES and not any(it.get("choice") for it in items):
+                items = kpsi_items_with_cases(items, section)
             if not items: return self.json({"error": "Escribe al menos un enunciado."}, 400)
             try: hours = max(1, min(int(payload.get("hours") or 72), 24 * 30))
             except (TypeError, ValueError): return self.json({"error": "Revisa la duración."}, 400)
@@ -2585,9 +2861,9 @@ class App(BaseHTTPRequestHandler):
                 for _ in range(5):
                     code = new_code(6)
                     try:
-                        db.execute("""INSERT INTO surveys(project_id,code,kind,moment,title,items,scale,created_by,created_at,closes_at,cohort)
-                          VALUES(?,?,?,?,?,?,?,?,?,?,?)""", (project, code, kind, moment, title, json.dumps(items, ensure_ascii=False),
-                                                         json.dumps(scale, ensure_ascii=False), user["id"], now, now + hours * 3600, current_cohort(db)))
+                        db.execute("""INSERT INTO surveys(project_id,code,kind,moment,title,items,scale,created_by,created_at,closes_at,cohort,section)
+                          VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (project, code, kind, moment, title, json.dumps(items, ensure_ascii=False),
+                                                         json.dumps(scale, ensure_ascii=False), user["id"], now, now + hours * 3600, current_cohort(db), section))
                         break
                     except sqlite3.IntegrityError:
                         continue
@@ -2598,22 +2874,58 @@ class App(BaseHTTPRequestHandler):
             try: survey_id = int(payload.get("id", 0))
             except (TypeError, ValueError): return self.json({"error": "Identificador inválido."}, 400)
             with connect() as db:
-                row = db.execute("SELECT project_id FROM surveys WHERE id=?", (survey_id,)).fetchone()
+                row = db.execute("SELECT * FROM surveys WHERE id=?", (survey_id,)).fetchone()
                 if not row or row["project_id"] not in self.managed_projects(user): return self.json({"error": "No tienes permiso para esta encuesta."}, 403)
-                db.execute("UPDATE surveys SET active=? WHERE id=?", (int(bool(payload.get("active"))), survey_id))
-            return self.json({"ok": True})
+                has_answers = bool(db.execute("SELECT 1 FROM survey_answers WHERE survey_id=?", (survey_id,)).fetchone())
+                changes = {}
+                if "active" in payload: changes["active"] = int(bool(payload.get("active")))
+                if "title" in payload:
+                    title = str(payload.get("title", "")).strip()[:120]
+                    if not title: return self.json({"error": "La encuesta necesita un título."}, 400)
+                    changes["title"] = title
+                if "section" in payload:
+                    section = str(payload.get("section", "")).strip()
+                    if section and section not in PROJECT_SECTIONS[row["project_id"]]: return self.json({"error": "Elige un paralelo válido."}, 400)
+                    changes["section"] = section
+                if payload.get("hours"):
+                    try: hours = max(1, min(int(payload["hours"]), 24 * 30))
+                    except (TypeError, ValueError): return self.json({"error": "Revisa la duración."}, 400)
+                    changes["closes_at"], changes["active"] = int(time.time()) + hours * 3600, 1
+                current_items = normalize_survey_items(json.loads(row["items"]))
+                target_section = changes.get("section", row["section"])
+                if "items" in payload:
+                    items = parse_survey_items(payload.get("items"))
+                    if not items: return self.json({"error": "Escribe al menos un enunciado."}, 400)
+                    if payload.get("use_section_cases") and row["kind"] == "kpsi" and target_section in KPSI_CASES:
+                        items = kpsi_items_with_cases(items, target_section)
+                    if items != current_items:
+                        # Changing the statements after people answered would mix answers to different questions.
+                        if has_answers:
+                            return self.json({"error": "Esta encuesta ya tiene respuestas: puedes cambiar el título, el paralelo o el plazo, pero no los enunciados."}, 409)
+                        changes["items"] = json.dumps(items, ensure_ascii=False)
+                elif not has_answers and row["kind"] == "kpsi" and row["project_id"] == "incentiva" and target_section in KPSI_CASES and (payload.get("use_section_cases") or not any(it.get("choice") for it in current_items)):
+                    changes["items"] = json.dumps(kpsi_items_with_cases(current_items, target_section), ensure_ascii=False)
+                if changes:
+                    db.execute(f"UPDATE surveys SET {','.join(k + '=?' for k in changes)} WHERE id=?", (*changes.values(), survey_id))
+            return self.json({"ok": True, "message": "Encuesta actualizada."})
         survey_answer = re.fullmatch(r"/api/surveys/([A-Za-z0-9-]{4,12})/answer", path)
         if survey_answer:
             user = self.require_user()
             if not user: return
             with connect() as db:
                 survey = db.execute("SELECT * FROM surveys WHERE code=?", (normalize_code(survey_answer.group(1)),)).fetchone()
-                if not survey or not self.has_project_access(user, survey["project_id"]): return self.json({"error": "Esta encuesta no existe."}, 404)
+                if not survey or not self.has_project_access(user, survey["project_id"]) or not survey_visible(db, user, survey):
+                    return self.json({"error": "Esta encuesta no existe."}, 404)
                 if not survey["active"] or survey["closes_at"] <= time.time(): return self.json({"error": "Esta encuesta ya cerró."}, 409)
-                items, scale = json.loads(survey["items"]), json.loads(survey["scale"])
+                items, scale = normalize_survey_items(json.loads(survey["items"])), json.loads(survey["scale"])
                 values = payload.get("values")
-                if not isinstance(values, list) or len(values) != len(items) or not all(isinstance(v, int) and 1 <= v <= len(scale) for v in values):
-                    return self.json({"error": "Marca una opción en cada enunciado."}, 400)
+                choice_idx = [i for i, it in enumerate(items) if it.get("choice")]
+                scale_idx = [i for i, it in enumerate(items) if not it.get("choice")]
+                if (not isinstance(values, list) or len(values) != len(items)
+                        or not all(isinstance(values[i], int) and 1 <= values[i] <= len(scale) for i in scale_idx)
+                        or not all(isinstance(values[i], int) and values[i] in (0, 1) for i in choice_idx)
+                        or (choice_idx and sum(values[i] for i in choice_idx) != 1)):
+                    return self.json({"error": "Marca el caso de tu equipo y una opción en cada enunciado." if choice_idx else "Marca una opción en cada enunciado."}, 400)
                 try:
                     db.execute("INSERT INTO survey_respondents(survey_id,user_id) VALUES(?,?)", (survey["id"], user["id"]))
                 except sqlite3.IntegrityError:
@@ -2705,14 +3017,7 @@ class App(BaseHTTPRequestHandler):
                         slug=base_slug; suffix=2
                         while db.execute("SELECT 1 FROM resources WHERE project_id=? AND slug=?",(row["project_id"],slug)).fetchone():
                             slug=f"{base_slug}-{suffix}"; suffix+=1
-                        fields=json.loads(row["project_fields"] or "{}")
-                        # Plain-text copy keeps the record readable and searchable; the detail page shows the structured fields.
-                        lines=[f"{f['label']}: {f['value']}" for f in labeled_fields(row["project_id"],fields)]
-                        if row["ai_declaration"]: lines.append("Declaración de IA: "+row["ai_declaration"])
-                        content="\n\n".join(lines)
-                        category="Cápsula educativa" if row["project_id"]=="innova" else "Video-prototipo"
-                        tag_keys=("process","technique") if row["project_id"]=="innova" else ("challenge",)
-                        tags=[str(fields[k])[:50] for k in tag_keys if fields.get(k)]+([row["section"]] if row["section"] else [])
+                        category,content,tags=published_copy(row["project_id"],row)
                         db.execute("""INSERT INTO resources(project_id,slug,title,category,summary,content,tags,media_url,status,source_submission_id)
                           VALUES(?,?,?,?,?,?,?,?, 'published',?)""",
                           (row["project_id"],slug,row["title"],category,row["summary"],content,json.dumps(tags,ensure_ascii=False),row["video_url"],item_id))
